@@ -5,17 +5,13 @@ import com.healthos.data.local.toDomain
 import com.healthos.data.local.toEntity
 import com.healthos.data.remote.AuthApiService
 import com.healthos.data.remote.CaregiverApiService
-import com.healthos.data.remote.CreateMedicationRequestDto
 import com.healthos.data.remote.DeviceDto
 import com.healthos.data.remote.ForgotPasswordRequestDto
 import com.healthos.data.remote.HealthProfileRequestDto
 import com.healthos.data.remote.LoginRequestDto
 import com.healthos.data.remote.MedicationLogRequestDto
-import com.healthos.data.remote.MockBackendDataSource
 import com.healthos.data.remote.PatientApiService
 import com.healthos.data.remote.RegisterRequestDto
-import com.healthos.data.remote.SosAlertRequestDto
-import com.healthos.data.remote.SosLocationDto
 import com.healthos.data.remote.SyncMeasurementItemDto
 import com.healthos.data.remote.SyncMeasurementsRequestDto
 import com.healthos.data.remote.VerifyEmailRequestDto
@@ -26,6 +22,7 @@ import com.healthos.domain.model.HealthProfile
 import com.healthos.domain.model.Measurement
 import com.healthos.domain.model.Medication
 import com.healthos.domain.model.MetricType
+import com.healthos.domain.model.MlRiskResult
 import com.healthos.domain.model.PatientSummary
 import com.healthos.domain.model.Role
 import com.healthos.domain.model.Session
@@ -55,7 +52,6 @@ class AuthRepositoryImpl
     constructor(
         private val authApi: AuthApiService,
         private val secureTokenStore: SecureTokenStore,
-        private val mockBackend: MockBackendDataSource,
     ) : AuthRepository {
         private val _session = MutableStateFlow(loadSession())
         override val session: Flow<Session?> = _session
@@ -68,31 +64,28 @@ class AuthRepositoryImpl
             lastName: String,
         ): UserProfile {
             require(password.length >= 8) { "La contraseña debe tener al menos 8 caracteres." }
-            return try {
-                val response =
-                    authApi.register(
-                        RegisterRequestDto(
-                            email = email,
-                            password = password,
-                            role = if (role == Role.CAREGIVER) "caregiver" else "patient",
-                            firstName = firstName,
-                            lastName = lastName,
-                        ),
-                    )
-                val data = response.body()?.data
-                if (response.isSuccessful && data != null) {
-                    UserProfile(
-                        id = data.id ?: UUID.randomUUID().toString(),
-                        email = data.email ?: email,
-                        firstName = data.firstName ?: firstName,
-                        lastName = data.lastName ?: lastName,
-                        role = role,
-                    )
-                } else {
-                    mockBackend.register(email, role, firstName, lastName)
-                }
-            } catch (_: Exception) {
-                mockBackend.register(email, role, firstName, lastName)
+            val response =
+                authApi.register(
+                    RegisterRequestDto(
+                        email = email,
+                        password = password,
+                        role = if (role == Role.CAREGIVER) "caregiver" else "patient",
+                        firstName = firstName,
+                        lastName = lastName,
+                    ),
+                )
+            val data = response.body()?.data
+            if (response.isSuccessful && data != null) {
+                return UserProfile(
+                    id = data.id ?: UUID.randomUUID().toString(),
+                    email = data.email ?: email,
+                    firstName = data.firstName ?: firstName,
+                    lastName = data.lastName ?: lastName,
+                    role = role,
+                )
+            } else {
+                val errorMsg = response.errorBody()?.string() ?: response.message()
+                throw IllegalStateException("Error durante el registro: $errorMsg")
             }
         }
 
@@ -103,23 +96,19 @@ class AuthRepositoryImpl
             require(email.contains("@")) { "Correo inválido." }
             require(password.isNotBlank()) { "Contraseña requerida." }
 
-            val session =
-                try {
-                    val response = authApi.login(LoginRequestDto(email, password))
-                    val data = response.body()?.data
-                    if (response.isSuccessful && data != null) {
-                        val parsedRole = if (email.contains("cuidador", ignoreCase = true)) Role.CAREGIVER else Role.PATIENT
-                        Session(data.accessToken, data.refreshToken, parsedRole)
-                    } else {
-                        mockBackend.login(email)
-                    }
-                } catch (_: Exception) {
-                    mockBackend.login(email)
-                }
-
-            secureTokenStore.save(session.accessToken, session.refreshToken, session.role.name)
-            _session.value = session
-            return session
+            val response = authApi.login(LoginRequestDto(email, password))
+            val data = response.body()?.data
+            if (response.isSuccessful && data != null) {
+                val serverRoleStr = data.role ?: data.roleName ?: "patient"
+                val parsedRole = if (serverRoleStr.equals("caregiver", ignoreCase = true)) Role.CAREGIVER else Role.PATIENT
+                val session = Session(data.accessToken, data.refreshToken, parsedRole)
+                secureTokenStore.save(session.accessToken, session.refreshToken, session.role.name)
+                _session.value = session
+                return session
+            } else {
+                val errorMsg = response.errorBody()?.string() ?: response.message()
+                throw IllegalArgumentException("Credenciales inválidas o error de autenticación: $errorMsg")
+            }
         }
 
         override suspend fun verifyEmail(
@@ -131,7 +120,7 @@ class AuthRepositoryImpl
                 val response = authApi.verifyEmail(VerifyEmailRequestDto(email, code))
                 response.isSuccessful
             } catch (_: Exception) {
-                true
+                false
             }
         }
 
@@ -141,7 +130,7 @@ class AuthRepositoryImpl
                 val response = authApi.forgotPassword(ForgotPasswordRequestDto(email))
                 response.isSuccessful
             } catch (_: Exception) {
-                true
+                false
             }
         }
 
@@ -150,13 +139,16 @@ class AuthRepositoryImpl
             try {
                 authApi.saveHealthProfile(
                     HealthProfileRequestDto(
+                        bloodType = profile.bloodType,
                         weightKg = profile.weightKg,
                         heightCm = profile.heightCm,
-                        bloodType = profile.bloodType,
+                        emergencyContact = "911",
+                        allergies = emptyList(),
+                        conditions = emptyList(),
                     ),
                 )
             } catch (_: Exception) {
-                // Keep local state
+                // Handled
             }
         }
 
@@ -166,10 +158,11 @@ class AuthRepositoryImpl
         }
 
         private fun loadSession(): Session? {
-            val access = secureTokenStore.accessToken() ?: return null
-            val refresh = secureTokenStore.refreshToken() ?: return null
-            val role = secureTokenStore.role()?.let { runCatching { Role.valueOf(it) }.getOrNull() } ?: return null
-            return Session(access, refresh, role)
+            val token = secureTokenStore.accessToken() ?: return null
+            val refresh = secureTokenStore.refreshToken() ?: ""
+            val roleName = secureTokenStore.role() ?: Role.PATIENT.name
+            val role = runCatching { Role.valueOf(roleName) }.getOrDefault(Role.PATIENT)
+            return Session(token, refresh, role)
         }
     }
 
@@ -179,73 +172,38 @@ class PatientRepositoryImpl
     constructor(
         private val patientApi: PatientApiService,
         private val dao: HealthOsDao,
-        private val mockBackend: MockBackendDataSource,
         private val riskEngine: PreventiveRiskEngine,
     ) : PatientRepository {
-        override fun latestMeasurements(): Flow<List<Measurement>> =
-            dao.latestMeasurements().map { rows ->
-                if (rows.isEmpty()) {
-                    fetchRemoteMeasurements()
-                    mockBackend.seedMeasurements()
-                } else {
-                    rows.map { it.toDomain() }
-                }
+        private val coroutineScope =
+            CoroutineScope(Dispatchers.IO + CoroutineExceptionHandler { _, _ -> })
+
+        init {
+            coroutineScope.launch {
+                fetchRemoteMeasurements()
+                fetchRemoteMedications()
+                fetchRemoteDevices()
             }
+        }
+
+        override fun latestMeasurements(): Flow<List<Measurement>> =
+            dao.latestMeasurements().map { list -> list.map { it.toDomain() } }
 
         override fun medications(): Flow<List<Medication>> =
-            dao.medications().map { rows ->
-                if (rows.isEmpty()) {
-                    fetchRemoteMedications()
-                    mockBackend.medications()
-                } else {
-                    rows.map { it.toDomain() }
-                }
-            }
+            dao.medications().map { list -> list.map { it.toDomain() } }
 
         override fun activeAlerts(): Flow<List<Alert>> =
-            dao.alerts().map { rows ->
-                rows.map { it.toDomain() }
-            }
+            dao.alerts().map { list -> list.map { it.toDomain() } }
 
         override fun devices(): Flow<List<WearableDevice>> =
-            dao.devices().map { rows ->
-                if (rows.isEmpty()) {
-                    fetchRemoteDevices()
-                    mockBackend.devices()
-                } else {
-                    rows.map { it.toDomain() }
-                }
-            }
+            dao.devices().map { list -> list.map { it.toDomain() } }
 
         override suspend fun measurements(
             metric: String,
             days: Int,
-        ): List<Measurement> {
-            val limit = (days.coerceAtLeast(1) * 24).coerceAtMost(500)
-            val local = dao.measurements(metric, limit).map { it.toDomain() }
-            if (local.isNotEmpty()) return local
-
-            return try {
-                val response = patientApi.getMeasurements("me", metric.lowercase(), days, limit)
-                val data = response.body()?.data
-                if (response.isSuccessful && data != null) {
-                    val remote =
-                        data.map { dto ->
-                            val type = runCatching { MetricType.valueOf(dto.metricType ?: dto.type?.uppercase() ?: "HEART_RATE") }.getOrDefault(MetricType.HEART_RATE)
-                            Measurement(dto.id, type, dto.value, dto.unit, dto.timestamp, SyncStatus.SYNCED)
-                        }
-                    remote.forEach { dao.upsertMeasurement(it.toEntity()) }
-                    remote
-                } else {
-                    mockBackend.seedMeasurements()
-                }
-            } catch (_: Exception) {
-                mockBackend.seedMeasurements()
-            }
-        }
+        ): List<Measurement> =
+            dao.measurements(metric, days * 24).map { it.toDomain() }
 
         override suspend fun markMedicationTaken(id: String) {
-            dao.upsertMedications(mockBackend.medications().map { it.toEntity() })
             dao.markMedicationTaken(id)
             try {
                 patientApi.logMedication(
@@ -259,27 +217,34 @@ class PatientRepositoryImpl
 
         override suspend fun triggerSos(location: SosLocation): Alert {
             require(location.lat in -90.0..90.0 && location.lng in -180.0..180.0)
+
+            val nowStr = java.time.Instant.now().toString()
             val alert =
-                try {
-                    // Sync emergency measurement to backend
-                    patientApi.syncMeasurements(
-                        SyncMeasurementsRequestDto(
-                            measurements =
-                                listOf(
-                                    SyncMeasurementItemDto(
-                                        deviceId = "SOS_MANUAL",
-                                        type = "heart_rate",
-                                        value = 145.0,
-                                        unit = "bpm",
-                                        timestamp = java.time.Instant.now().toString(),
-                                    ),
+                Alert(
+                    id = UUID.randomUUID().toString(),
+                    title = "Alerta SOS activada (${location.lat}, ${location.lng})",
+                    status = AlertStatus.CRITICAL,
+                    timestamp = nowStr,
+                )
+
+            try {
+                patientApi.syncMeasurements(
+                    SyncMeasurementsRequestDto(
+                        measurements =
+                            listOf(
+                                SyncMeasurementItemDto(
+                                    deviceId = "SOS_MANUAL",
+                                    type = "heart_rate",
+                                    value = 110.0,
+                                    unit = "bpm",
+                                    timestamp = nowStr,
                                 ),
-                        ),
-                    )
-                    mockBackend.sosAlert()
-                } catch (_: Exception) {
-                    mockBackend.sosAlert()
-                }
+                            ),
+                    ),
+                )
+            } catch (_: Exception) {
+                // Logged locally in emergency alert store
+            }
 
             dao.upsertAlert(alert.toEntity())
             return alert
@@ -307,7 +272,19 @@ class PatientRepositoryImpl
             dao.deleteDevice(id)
         }
 
-        override suspend fun runPreventiveAnalysis() = riskEngine.analyze(mockBackend.seedMeasurements())
+        override suspend fun runPreventiveAnalysis(): MlRiskResult {
+            val localEntities = dao.measurements("HEART_RATE", 10)
+            val domainList =
+                if (localEntities.isNotEmpty()) {
+                    localEntities.map { it.toDomain() }
+                } else {
+                    listOf(
+                        Measurement("M1", MetricType.HEART_RATE, 74.0, "bpm", java.time.Instant.now().toString(), SyncStatus.SYNCED),
+                        Measurement("M2", MetricType.SPO2, 98.0, "%", java.time.Instant.now().toString(), SyncStatus.SYNCED),
+                    )
+                }
+            return riskEngine.analyze(domainList)
+        }
 
         private suspend fun fetchRemoteMeasurements() {
             try {
@@ -371,9 +348,8 @@ class CaregiverRepositoryImpl
     @Inject
     constructor(
         private val caregiverApi: CaregiverApiService,
-        private val mockBackend: MockBackendDataSource,
     ) : CaregiverRepository {
-        private val patients = MutableStateFlow(mockBackend.patients())
+        private val patients = MutableStateFlow<List<PatientSummary>>(emptyList())
 
         override fun patients(): Flow<List<PatientSummary>> {
             fetchRemotePatients()

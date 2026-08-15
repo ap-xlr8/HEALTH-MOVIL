@@ -48,7 +48,6 @@ object AppModule {
         SQLiteDatabase.loadLibs(context)
         return Room.databaseBuilder(context, HealthOsDatabase::class.java, "healthos.db")
             .openHelperFactory(SupportFactory(passphraseProvider.passphrase()))
-            .fallbackToDestructiveMigration()
             .build()
     }
 

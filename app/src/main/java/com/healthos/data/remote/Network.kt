@@ -44,25 +44,38 @@ class NetworkFactory
         fun retrofit(): Retrofit {
             val logging =
                 HttpLoggingInterceptor().apply {
-                    level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BODY else HttpLoggingInterceptor.Level.NONE
+                    level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.HEADERS else HttpLoggingInterceptor.Level.NONE
+                    redactHeader("Authorization")
+                    redactHeader("Cookie")
                 }
-            val pinner =
-                CertificatePinner.Builder()
-                    .add("api.healthos.app", "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
-                    .add("staging.api.healthos.app", "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
-                    .build()
-            val client =
+
+            val clientBuilder =
                 OkHttpClient.Builder()
                     .addInterceptor(authHeaderInterceptor)
                     .addInterceptor(logging)
                     .connectTimeout(15, TimeUnit.SECONDS)
                     .readTimeout(15, TimeUnit.SECONDS)
                     .writeTimeout(15, TimeUnit.SECONDS)
-                    .certificatePinner(pinner)
-                    .build()
+
+            if (!BuildConfig.DEBUG) {
+                val pinner =
+                    CertificatePinner.Builder()
+                        .add("api.healthos.app", "sha256/WoiWRyIOVNa9ihaBciRSC7XHjliYS9VwUGOIud4PB18=")
+                        .add("staging.api.healthos.app", "sha256/WoiWRyIOVNa9ihaBciRSC7XHjliYS9VwUGOIud4PB18=")
+                        .build()
+                clientBuilder.certificatePinner(pinner)
+            }
+
+            val baseUrl =
+                if (BuildConfig.DEBUG) {
+                    BuildConfig.API_BASE_URL_DEV
+                } else {
+                    BuildConfig.API_BASE_URL_PROD
+                }
+
             return Retrofit.Builder()
-                .baseUrl(BuildConfig.API_BASE_URL_DEV.ensureTrailingSlash())
-                .client(client)
+                .baseUrl(baseUrl.ensureTrailingSlash())
+                .client(clientBuilder.build())
                 .addConverterFactory(MoshiConverterFactory.create(moshi))
                 .build()
         }

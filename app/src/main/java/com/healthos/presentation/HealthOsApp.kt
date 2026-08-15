@@ -200,8 +200,8 @@ private fun LoginScreen(
     onForgot: () -> Unit,
     onBack: () -> Unit,
 ) {
-    var email by remember { mutableStateOf("paciente@ejemplo.com") }
-    var password by remember { mutableStateOf("Password123!") }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
     Field("Email", email) { email = it }
     PasswordField(password) { password = it }
     ActionButton(loading, "Entrar") { onLogin(email, password) }
@@ -222,11 +222,11 @@ private fun RegisterScreen(
     onNext: () -> Unit,
     onBack: () -> Unit,
 ) {
-    var email by remember { mutableStateOf("paciente@ejemplo.com") }
-    var password by remember { mutableStateOf("Password123!") }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
     var role by remember { mutableStateOf(Role.PATIENT) }
-    var firstName by remember { mutableStateOf("Carlos") }
-    var lastName by remember { mutableStateOf("Lopez") }
+    var firstName by remember { mutableStateOf("") }
+    var lastName by remember { mutableStateOf("") }
     Field("Nombre", firstName) { firstName = it }
     Field("Apellido", lastName) { lastName = it }
     Field("Email", email) { email = it }
@@ -275,8 +275,8 @@ private fun VerifyEmailScreen(
     onNext: () -> Unit,
     onBack: () -> Unit,
 ) {
-    var email by remember { mutableStateOf("paciente@ejemplo.com") }
-    var code by remember { mutableStateOf("847291") }
+    var email by remember { mutableStateOf("") }
+    var code by remember { mutableStateOf("") }
     Field("Email", email) { email = it }
     Field("Codigo", code) { code = it }
     ActionButton(loading, "Verificar") {

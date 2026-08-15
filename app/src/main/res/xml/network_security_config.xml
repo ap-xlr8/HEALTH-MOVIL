@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="true">10.0.2.2</domain>
@@ -7,9 +8,8 @@
     <domain-config cleartextTrafficPermitted="false">
         <domain includeSubdomains="true">staging.api.healthos.app</domain>
         <domain includeSubdomains="true">api.healthos.app</domain>
-        <pin-set expiration="2027-12-31">
-            <pin digest="SHA-256">AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</pin>
-            <pin digest="SHA-256">BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=</pin>
-        </pin-set>
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
     </domain-config>
 </network-security-config>
