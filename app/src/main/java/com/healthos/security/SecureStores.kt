@@ -9,12 +9,12 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class SecureTokenStore
+open class SecureTokenStore {
+    private var prefs: android.content.SharedPreferences? = null
+
     @Inject
-    constructor(
-        @ApplicationContext context: Context,
-    ) {
-        private val prefs =
+    constructor(@ApplicationContext context: Context) {
+        prefs =
             EncryptedSharedPreferences.create(
                 context,
                 "healthos_secure_tokens",
@@ -22,27 +22,34 @@ class SecureTokenStore
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
             )
-
-        fun save(
-            accessToken: String,
-            refreshToken: String,
-            role: String,
-        ) {
-            prefs.edit()
-                .putString("access_token", accessToken)
-                .putString("refresh_token", refreshToken)
-                .putString("role", role)
-                .apply()
-        }
-
-        fun accessToken(): String? = prefs.getString("access_token", null)
-
-        fun refreshToken(): String? = prefs.getString("refresh_token", null)
-
-        fun role(): String? = prefs.getString("role", null)
-
-        fun clear() = prefs.edit().clear().apply()
     }
+
+    constructor() {
+        prefs = null
+    }
+
+    open fun save(
+        accessToken: String,
+        refreshToken: String,
+        role: String,
+    ) {
+        prefs?.edit()
+            ?.putString("access_token", accessToken)
+            ?.putString("refresh_token", refreshToken)
+            ?.putString("role", role)
+            ?.apply()
+    }
+
+    open fun accessToken(): String? = prefs?.getString("access_token", null)
+
+    open fun refreshToken(): String? = prefs?.getString("refresh_token", null)
+
+    open fun role(): String? = prefs?.getString("role", null)
+
+    open fun clear() {
+        prefs?.edit()?.clear()?.apply()
+    }
+}
 
 @Singleton
 class DatabasePassphraseProvider

@@ -23,7 +23,7 @@ import org.junit.Assert.fail
 import org.junit.Test
 import retrofit2.Response
 
-class FakeTokenStore : SecureTokenStore {
+class FakeTokenStore : SecureTokenStore() {
     var savedAccess: String? = null
     var savedRefresh: String? = null
     var savedRole: String? = null
