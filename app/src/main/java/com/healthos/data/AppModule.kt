@@ -5,6 +5,10 @@ import androidx.room.Room
 import com.healthos.bluetooth.BleConnectionManager
 import com.healthos.data.local.HealthOsDao
 import com.healthos.data.local.HealthOsDatabase
+import com.healthos.data.remote.AuthApiService
+import com.healthos.data.remote.CaregiverApiService
+import com.healthos.data.remote.NetworkFactory
+import com.healthos.data.remote.PatientApiService
 import com.healthos.data.repository.AuthRepositoryImpl
 import com.healthos.data.repository.CaregiverRepositoryImpl
 import com.healthos.data.repository.PatientRepositoryImpl
@@ -55,4 +59,19 @@ object AppModule {
     fun provideBleConnectionManager(
         @ApplicationContext context: Context,
     ) = BleConnectionManager(context)
+
+    @Provides
+    @Singleton
+    fun provideAuthApiService(networkFactory: NetworkFactory): AuthApiService =
+        networkFactory.retrofit().create(AuthApiService::class.java)
+
+    @Provides
+    @Singleton
+    fun providePatientApiService(networkFactory: NetworkFactory): PatientApiService =
+        networkFactory.retrofit().create(PatientApiService::class.java)
+
+    @Provides
+    @Singleton
+    fun provideCaregiverApiService(networkFactory: NetworkFactory): CaregiverApiService =
+        networkFactory.retrofit().create(CaregiverApiService::class.java)
 }
