@@ -22,7 +22,7 @@ class NormalSyncWorker
     ) : CoroutineWorker(context, params) {
         override suspend fun doWork(): Result {
             return try {
-                val list = dao.measurements("HEART_RATE", 10)
+                val list = dao.getPendingMeasurements(50)
                 if (list.isNotEmpty()) {
                     val dtos = list.map {
                         SyncMeasurementItemDto(
@@ -34,6 +34,7 @@ class NormalSyncWorker
                         )
                     }
                     patientApi.syncMeasurements(SyncMeasurementsRequestDto(measurements = dtos))
+                    dao.updateSyncStatus(list.map { it.id }, com.healthos.domain.model.SyncStatus.SYNCED)
                 }
                 Result.success()
             } catch (_: Exception) {
@@ -48,6 +49,7 @@ class CriticalSyncWorker
     constructor(
         @Assisted context: Context,
         @Assisted params: WorkerParameters,
+        private val dao: HealthOsDao,
         private val patientApi: PatientApiService,
     ) : CoroutineWorker(context, params) {
         override suspend fun doWork(): Result {
@@ -55,6 +57,7 @@ class CriticalSyncWorker
             if (eventId.isBlank()) return Result.failure()
             return try {
                 val nowStr = java.time.Instant.now().toString()
+                val latestHr = dao.measurements("HEART_RATE", 1).firstOrNull()?.value ?: 0.0
                 patientApi.syncMeasurements(
                     SyncMeasurementsRequestDto(
                         measurements =
@@ -62,7 +65,7 @@ class CriticalSyncWorker
                                 SyncMeasurementItemDto(
                                     deviceId = "CRITICAL_EVENT_$eventId",
                                     type = "heart_rate",
-                                    value = 120.0,
+                                    value = latestHr,
                                     unit = "bpm",
                                     timestamp = nowStr,
                                 ),
@@ -75,3 +78,4 @@ class CriticalSyncWorker
             }
         }
     }
+

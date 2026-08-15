@@ -28,6 +28,9 @@ jobs:
         with:
           gradle-version: 8.10.2
 
+      - name: Code Quality & Static Analysis (ktlint & detekt)
+        run: ./gradlew ktlintCheck detekt
+
       - name: Run Unit Tests
         run: ./gradlew testDebugUnitTest
 

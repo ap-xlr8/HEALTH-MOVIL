@@ -61,7 +61,9 @@ class NetworkFactory
                 val pinner =
                     CertificatePinner.Builder()
                         .add("api.healthos.app", "sha256/WoiWRyIOVNa9ihaBciRSC7XHjliYS9VwUGOIud4PB18=")
+                        .add("api.healthos.app", "sha256/r/mIts6OE1MxXPUqPWnrwkW29OXmWraDp3OmPqjGA5o=") // Backup ISRG Root X1 pin
                         .add("staging.api.healthos.app", "sha256/WoiWRyIOVNa9ihaBciRSC7XHjliYS9VwUGOIud4PB18=")
+                        .add("staging.api.healthos.app", "sha256/r/mIts6OE1MxXPUqPWnrwkW29OXmWraDp3OmPqjGA5o=") // Backup pin
                         .build()
                 clientBuilder.certificatePinner(pinner)
             }
