@@ -1,14 +1,14 @@
 package com.healthos
 
+import com.healthos.data.remote.ApiResponse
 import com.healthos.data.remote.AuthApiService
 import com.healthos.data.remote.ForgotPasswordRequestDto
 import com.healthos.data.remote.HealthProfileRequestDto
 import com.healthos.data.remote.LoginRequestDto
 import com.healthos.data.remote.LoginResponseDto
-import com.healthos.data.remote.LoginResponseWrapperDto
+import com.healthos.data.remote.RefreshTokenRequestDto
 import com.healthos.data.remote.RegisterRequestDto
-import com.healthos.data.remote.RegisterResponseDto
-import com.healthos.data.remote.RegisterResponseWrapperDto
+import com.healthos.data.remote.UserDto
 import com.healthos.data.remote.VerifyEmailRequestDto
 import com.healthos.data.repository.AuthRepositoryImpl
 import com.healthos.domain.model.Role
@@ -48,30 +48,33 @@ class FakeAuthApiService : AuthApiService {
     var shouldFailLogin = false
     var shouldFailRegister = false
 
-    override suspend fun register(request: RegisterRequestDto): Response<RegisterResponseWrapperDto> {
+    override suspend fun register(request: RegisterRequestDto): Response<ApiResponse<UserDto>> {
         if (shouldFailRegister) {
             val errorBody = "{\"error\": \"User exists\"}".toResponseBody("application/json".toMediaTypeOrNull())
             return Response.error(400, errorBody)
         }
         return Response.success(
-            RegisterResponseWrapperDto(
-                data = RegisterResponseDto(
+            ApiResponse(
+                status = "success",
+                data = UserDto(
                     id = "USR-001",
                     email = request.email,
                     firstName = request.firstName,
                     lastName = request.lastName,
+                    role = request.role,
                 )
             )
         )
     }
 
-    override suspend fun login(request: LoginRequestDto): Response<LoginResponseWrapperDto> {
+    override suspend fun login(request: LoginRequestDto): Response<ApiResponse<LoginResponseDto>> {
         if (shouldFailLogin) {
             val errorBody = "{\"error\": \"Unauthorized\"}".toResponseBody("application/json".toMediaTypeOrNull())
             return Response.error(401, errorBody)
         }
         return Response.success(
-            LoginResponseWrapperDto(
+            ApiResponse(
+                status = "success",
                 data = LoginResponseDto(
                     accessToken = "access_token_123",
                     refreshToken = "refresh_token_123",
@@ -81,14 +84,26 @@ class FakeAuthApiService : AuthApiService {
         )
     }
 
-    override suspend fun verifyEmail(request: VerifyEmailRequestDto): Response<Map<String, Any>> =
-        Response.success(mapOf("success" to true))
+    override suspend fun refresh(request: RefreshTokenRequestDto): Response<ApiResponse<LoginResponseDto>> =
+        Response.success(
+            ApiResponse(
+                status = "success",
+                data = LoginResponseDto(
+                    accessToken = "new_access_token",
+                    refreshToken = request.refreshToken,
+                    role = "patient",
+                )
+            )
+        )
 
-    override suspend fun forgotPassword(request: ForgotPasswordRequestDto): Response<Map<String, Any>> =
-        Response.success(mapOf("success" to true))
+    override suspend fun verifyEmail(request: VerifyEmailRequestDto): Response<ApiResponse<Map<String, Any>>> =
+        Response.success(ApiResponse(status = "success", data = mapOf("success" to true)))
 
-    override suspend fun saveHealthProfile(request: HealthProfileRequestDto): Response<Map<String, Any>> =
-        Response.success(mapOf("success" to true))
+    override suspend fun forgotPassword(request: ForgotPasswordRequestDto): Response<ApiResponse<Map<String, Any>>> =
+        Response.success(ApiResponse(status = "success", data = mapOf("success" to true)))
+
+    override suspend fun saveHealthProfile(request: HealthProfileRequestDto): Response<ApiResponse<Map<String, Any>>> =
+        Response.success(ApiResponse(status = "success", data = mapOf("success" to true)))
 }
 
 class AuthRepositoryTest {
