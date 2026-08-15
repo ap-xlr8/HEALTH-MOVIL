@@ -99,7 +99,7 @@ class AuthRepositoryImpl
             val response = authApi.login(LoginRequestDto(email, password))
             val data = response.body()?.data
             if (response.isSuccessful && data != null) {
-                val serverRoleStr = data.role ?: data.roleName ?: "patient"
+                val serverRoleStr = data.role ?: data.user?.role ?: "patient"
                 val parsedRole = if (serverRoleStr.equals("caregiver", ignoreCase = true)) Role.CAREGIVER else Role.PATIENT
                 val session = Session(data.accessToken, data.refreshToken, parsedRole)
                 secureTokenStore.save(session.accessToken, session.refreshToken, session.role.name)
@@ -139,12 +139,9 @@ class AuthRepositoryImpl
             try {
                 authApi.saveHealthProfile(
                     HealthProfileRequestDto(
-                        bloodType = profile.bloodType,
                         weightKg = profile.weightKg,
                         heightCm = profile.heightCm,
-                        emergencyContact = "911",
-                        allergies = emptyList(),
-                        conditions = emptyList(),
+                        bloodType = profile.bloodType,
                     ),
                 )
             } catch (_: Exception) {

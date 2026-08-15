@@ -55,6 +55,8 @@ data class LoginResponseDto(
     @Json(name = "refresh_token") val refreshToken: String,
     @Json(name = "token_type") val tokenType: String = "Bearer",
     @Json(name = "expires_in") val expiresIn: Int = 900,
+    @Json(name = "role") val role: String? = null,
+    @Json(name = "user") val user: UserDto? = null,
 )
 
 data class RefreshTokenRequestDto(
