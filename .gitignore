@@ -1,0 +1,11 @@
+.gradle/
+.gradle-local/
+.kotlin/
+build/
+local.properties
+*.iml
+.idea/
+app/build/
+captures/
+.copy-target.txt
+window.xml

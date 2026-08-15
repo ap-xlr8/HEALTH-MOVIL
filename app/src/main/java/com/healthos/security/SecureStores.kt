@@ -1,0 +1,71 @@
+package com.healthos.security
+
+import android.content.Context
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
+import dagger.hilt.android.qualifiers.ApplicationContext
+import java.security.SecureRandom
+import javax.inject.Inject
+import javax.inject.Singleton
+
+@Singleton
+class SecureTokenStore
+    @Inject
+    constructor(
+        @ApplicationContext context: Context,
+    ) {
+        private val prefs =
+            EncryptedSharedPreferences.create(
+                context,
+                "healthos_secure_tokens",
+                MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
+
+        fun save(
+            accessToken: String,
+            refreshToken: String,
+            role: String,
+        ) {
+            prefs.edit()
+                .putString("access_token", accessToken)
+                .putString("refresh_token", refreshToken)
+                .putString("role", role)
+                .apply()
+        }
+
+        fun accessToken(): String? = prefs.getString("access_token", null)
+
+        fun refreshToken(): String? = prefs.getString("refresh_token", null)
+
+        fun role(): String? = prefs.getString("role", null)
+
+        fun clear() = prefs.edit().clear().apply()
+    }
+
+@Singleton
+class DatabasePassphraseProvider
+    @Inject
+    constructor(
+        @ApplicationContext context: Context,
+    ) {
+        private val prefs =
+            EncryptedSharedPreferences.create(
+                context,
+                "healthos_database_key",
+                MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
+
+        fun passphrase(): ByteArray {
+            val existing = prefs.getString("db_passphrase", null)
+            if (existing != null) return android.util.Base64.decode(existing, android.util.Base64.NO_WRAP)
+            val bytes = ByteArray(32).also { SecureRandom().nextBytes(it) }
+            prefs.edit()
+                .putString("db_passphrase", android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP))
+                .apply()
+            return bytes
+        }
+    }

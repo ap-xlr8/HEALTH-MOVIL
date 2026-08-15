@@ -1,0 +1,12 @@
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="healthos_secure_tokens.xml" />
+        <exclude domain="sharedpref" path="healthos_database_key.xml" />
+        <exclude domain="database" path="healthos.db" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="healthos_secure_tokens.xml" />
+        <exclude domain="sharedpref" path="healthos_database_key.xml" />
+        <exclude domain="database" path="healthos.db" />
+    </device-transfer>
+</data-extraction-rules>

@@ -1,0 +1,7 @@
+appId: com.healthos
+---
+- launchApp
+- assertVisible: "Health OS"
+- tapOn: "Login"
+- tapOn: "Entrar"
+- assertVisible: "Paciente"
