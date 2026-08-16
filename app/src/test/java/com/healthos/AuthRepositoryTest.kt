@@ -121,6 +121,9 @@ class FakeAuthApiService : AuthApiService {
 
     override suspend fun saveHealthProfile(request: HealthProfileRequestDto): Response<ApiResponse<Map<String, Any>>> =
         Response.success(ApiResponse(status = "success", data = mapOf("success" to true)))
+
+    override suspend fun updatePatientProfile(request: com.healthos.data.remote.PatientProfileDto): Response<ApiResponse<com.healthos.data.remote.PatientProfileDto>> =
+        Response.success(ApiResponse(status = "success", data = request))
 }
 
 class AuthRepositoryTest {

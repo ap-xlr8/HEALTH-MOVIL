@@ -142,6 +142,10 @@ import com.healthos.presentation.theme.TealContainer
 import com.healthos.presentation.theme.TealDark
 import com.healthos.presentation.theme.TealPrimary
 import com.healthos.presentation.theme.TextDisabled
+import com.healthos.presentation.patient.clinical.ClinicalHistoryScreen
+import com.healthos.presentation.settings.SettingsScreen
+import androidx.compose.material.icons.filled.MedicalServices
+import androidx.compose.material.icons.filled.Tune
 import com.healthos.presentation.theme.TextPrimary
 import com.healthos.presentation.theme.TextSecondary
 import com.healthos.presentation.theme.TextTertiary
@@ -172,9 +176,11 @@ fun PatientHome(
     val tabs = listOf(
         PatientTab("Inicio", Icons.Filled.Home),
         PatientTab("Métricas", Icons.Filled.ShowChart),
+        PatientTab("Historia", Icons.Filled.MedicalServices),
         PatientTab("SOS", Icons.Filled.Warning),
         PatientTab("Equipos", Icons.Outlined.Sensors),
-        PatientTab("Perfil", Icons.Filled.Settings),
+        PatientTab("Ajustes", Icons.Filled.Tune),
+        PatientTab("Perfil", Icons.Filled.Person),
     )
 
     ProvideWindowSizeInfo { sizeInfo ->
@@ -199,14 +205,19 @@ fun PatientHome(
                     onMedicationTaken = viewModel::markMedicationTaken,
                 )
                 1 -> MetricsScreen(contentModifier, measurements, sizeInfo)
-                2 -> SosScreen(
+                2 -> ClinicalHistoryScreen(
+                    viewModel = viewModel,
+                    onBack = { selected = 0 },
+                    modifier = contentModifier,
+                )
+                3 -> SosScreen(
                     contentModifier,
                     sizeInfo,
                     currentLocation,
                     viewModel::startLocationUpdates,
                     viewModel::triggerSos,
                 )
-                3 -> DevicesScreen(
+                4 -> DevicesScreen(
                     contentModifier,
                     devices,
                     bleState,
@@ -217,7 +228,12 @@ fun PatientHome(
                     viewModel::connectToScannedDevice,
                     viewModel::unlinkDevice,
                 )
-                4 -> ProfileScreen(contentModifier, healthProfile, sizeInfo, onLogout)
+                5 -> SettingsScreen(
+                    viewModel = viewModel,
+                    onBack = { selected = 0 },
+                    modifier = contentModifier,
+                )
+                6 -> ProfileScreen(contentModifier, healthProfile, sizeInfo, onLogout)
             }
         }
     }

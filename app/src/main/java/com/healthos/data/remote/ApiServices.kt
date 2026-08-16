@@ -105,6 +105,96 @@ data class HealthProfileRequestDto(
     @Json(name = "weight_kg") val weightKg: Double,
     @Json(name = "height_cm") val heightCm: Int,
     @Json(name = "blood_type") val bloodType: String,
+    @Json(name = "rh_factor") val rhFactor: String? = "+",
+    @Json(name = "birth_date") val birthDate: String? = null,
+    @Json(name = "gender") val gender: String? = null,
+    @Json(name = "emergency_contact_name") val emergencyContactName: String? = null,
+    @Json(name = "emergency_contact_phone") val emergencyContactPhone: String? = null,
+    @Json(name = "emergency_contact_relation") val emergencyContactRelation: String? = null,
+    @Json(name = "insurance_provider") val insuranceProvider: String? = null,
+    @Json(name = "policy_number") val policyNumber: String? = null,
+)
+
+// --- DTOs Historia Clínica Integral ---
+
+data class AllergyDto(
+    @Json(name = "id") val id: String,
+    @Json(name = "allergen") val allergen: String,
+    @Json(name = "category") val category: String,
+    @Json(name = "severity") val severity: String,
+    @Json(name = "manifestations") val manifestations: String,
+    @Json(name = "diagnosed_date") val diagnosedDate: String,
+)
+
+data class PathologicalHistoryDto(
+    @Json(name = "id") val id: String,
+    @Json(name = "type") val type: String,
+    @Json(name = "title") val title: String,
+    @Json(name = "icd10_code") val icd10Code: String? = null,
+    @Json(name = "year_or_date") val yearOrDate: String,
+    @Json(name = "notes") val notes: String? = "",
+)
+
+data class GynecoObstetricDto(
+    @Json(name = "id") val id: String? = null,
+    @Json(name = "menarche_age") val menarcheAge: Int? = null,
+    @Json(name = "last_menstrual_period") val lastMenstrualPeriod: String? = null,
+    @Json(name = "gestas") val gestas: Int = 0,
+    @Json(name = "partos") val partos: Int = 0,
+    @Json(name = "cesareas") val cesareas: Int = 0,
+    @Json(name = "abortos") val abortos: Int = 0,
+    @Json(name = "contraceptive_method") val contraceptiveMethod: String = "Ninguno",
+    @Json(name = "is_pregnant") val isPregnant: Boolean = false,
+    @Json(name = "gestational_weeks") val gestationalWeeks: Int? = null,
+)
+
+data class FamilyHistoryDto(
+    @Json(name = "id") val id: String,
+    @Json(name = "kinship") val kinship: String,
+    @Json(name = "condition_name") val conditionName: String,
+    @Json(name = "category") val category: String = "Cardiovascular",
+    @Json(name = "notes") val notes: String? = "",
+)
+
+data class LifestyleHabitsDto(
+    @Json(name = "id") val id: String? = null,
+    @Json(name = "smoking_status") val smokingStatus: String = "No fumador",
+    @Json(name = "packs_per_day") val packsPerDay: Double = 0.0,
+    @Json(name = "alcohol_frequency") val alcoholFrequency: String = "Ocasional",
+    @Json(name = "exercise_days_per_week") val exerciseDaysPerWeek: Int = 3,
+    @Json(name = "exercise_intensity") val exerciseIntensity: String = "Moderada",
+    @Json(name = "average_sleep_hours") val averageSleepHours: Double = 7.5,
+    @Json(name = "diet_pattern") val dietPattern: String = "Balanceada",
+)
+
+data class NotificationSettingsDto(
+    @Json(name = "push_enabled") val pushEnabled: Boolean = true,
+    @Json(name = "email_enabled") val emailEnabled: Boolean = true,
+    @Json(name = "sms_enabled") val smsEnabled: Boolean = false,
+    @Json(name = "sos_alerts") val sosAlerts: Boolean = true,
+    @Json(name = "routine_vitals") val routineVitals: Boolean = true,
+    @Json(name = "medication_reminders") val medicationReminders: Boolean = true,
+    @Json(name = "quiet_hours_enabled") val quietHoursEnabled: Boolean = false,
+    @Json(name = "quiet_hours_start") val quietHoursStart: String = "22:00",
+    @Json(name = "quiet_hours_end") val quietHoursEnd: String = "07:00",
+    @Json(name = "bypass_quiet_hours_for_sos") val bypassQuietHoursForSos: Boolean = true,
+)
+
+data class DynamicSyncConfigDto(
+    @Json(name = "device_id") val deviceId: String? = null,
+    @Json(name = "sampling_interval_ms") val samplingIntervalMs: Long = 1000L,
+    @Json(name = "batch_size") val batchSize: Int = 20,
+    @Json(name = "critical_sync_enabled") val criticalSyncEnabled: Boolean = true,
+)
+
+data class CaregiverProfileDto(
+    @Json(name = "id") val id: String,
+    @Json(name = "first_name") val firstName: String,
+    @Json(name = "last_name") val lastName: String,
+    @Json(name = "email") val email: String,
+    @Json(name = "specialty") val specialty: String? = null,
+    @Json(name = "institution") val institution: String? = null,
+    @Json(name = "emergency_phone") val emergencyPhone: String? = null,
 )
 
 // --- DTOs Sincronización y Mediciones ---
@@ -150,6 +240,8 @@ data class MedicationDto(
     @Json(name = "schedule") val schedule: String,
     @Json(name = "active") val active: Boolean = true,
     @Json(name = "taken_today") val takenToday: Boolean = false,
+    @Json(name = "route") val route: String? = "Oral",
+    @Json(name = "adherence_percentage") val adherencePercentage: Int? = 100,
 )
 
 data class CreateMedicationRequestDto(
@@ -157,6 +249,7 @@ data class CreateMedicationRequestDto(
     @Json(name = "dosage") val dosage: String,
     @Json(name = "schedule") val schedule: String,
     @Json(name = "active") val active: Boolean = true,
+    @Json(name = "route") val route: String? = "Oral",
 )
 
 data class MedicationLogRequestDto(
@@ -202,6 +295,9 @@ data class DeviceDto(
     @Json(name = "protocol") val protocol: String? = null,
     @Json(name = "public_key") val publicKey: String? = null,
     @Json(name = "connected") val connected: Boolean = false,
+    @Json(name = "battery_percent") val batteryPercent: Int? = 100,
+    @Json(name = "rssi") val rssi: Int? = -55,
+    @Json(name = "firmware_version") val firmwareVersion: String? = "1.0.0",
 )
 
 // --- DTOs Cuidador y Pacientes ---
@@ -211,6 +307,7 @@ data class PatientProfileDto(
     @Json(name = "first_name") val firstName: String,
     @Json(name = "last_name") val lastName: String? = null,
     @Json(name = "age") val age: Int? = null,
+    @Json(name = "phone") val phone: String? = null,
     @Json(name = "health_profile") val healthProfile: HealthProfileRequestDto? = null,
     @Json(name = "active_conditions") val activeConditions: List<String>? = null,
 )
@@ -277,6 +374,11 @@ interface AuthApiService {
     suspend fun saveHealthProfile(
         @Body request: HealthProfileRequestDto,
     ): Response<ApiResponse<Map<String, Any>>>
+
+    @PUT("v1/patients/me/profile")
+    suspend fun updatePatientProfile(
+        @Body request: PatientProfileDto,
+    ): Response<ApiResponse<PatientProfileDto>>
 }
 
 interface PatientApiService {
@@ -338,6 +440,28 @@ interface PatientApiService {
     suspend fun registerDevice(
         @Body request: DeviceDto,
     ): Response<ApiResponse<DeviceDto>>
+
+    @GET("v1/devices/{id}/sync-config")
+    suspend fun getDeviceSyncConfig(
+        @Path("id") deviceId: String,
+    ): Response<ApiResponse<DynamicSyncConfigDto>>
+
+    @PUT("v1/devices/{id}/sync-config")
+    suspend fun updateDeviceSyncConfig(
+        @Path("id") deviceId: String,
+        @Body request: DynamicSyncConfigDto,
+    ): Response<ApiResponse<DynamicSyncConfigDto>>
+
+    @GET("v1/patients/{id}/notification-settings")
+    suspend fun getNotificationSettings(
+        @Path("id") patientId: String,
+    ): Response<ApiResponse<NotificationSettingsDto>>
+
+    @PUT("v1/patients/{id}/notification-settings")
+    suspend fun updateNotificationSettings(
+        @Path("id") patientId: String,
+        @Body request: NotificationSettingsDto,
+    ): Response<ApiResponse<NotificationSettingsDto>>
 }
 
 interface CaregiverApiService {
@@ -348,4 +472,11 @@ interface CaregiverApiService {
     suspend fun getPatientProfile(
         @Path("id") patientId: String,
     ): Response<PatientProfileDto>
+
+    @PUT("v1/caregivers/{id}/profile")
+    suspend fun updateCaregiverProfile(
+        @Path("id") caregiverId: String,
+        @Body request: CaregiverProfileDto,
+    ): Response<ApiResponse<CaregiverProfileDto>>
 }
+

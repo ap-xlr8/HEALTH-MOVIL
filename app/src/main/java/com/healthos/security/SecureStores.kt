@@ -58,19 +58,65 @@ open class SecureTokenStore {
         weightKg: Double,
         heightCm: Int,
         bloodType: String,
+        rhFactor: String = "+",
+        birthDate: String = "",
+        gender: String = "No especificado",
+        emergencyContactName: String = "",
+        emergencyContactPhone: String = "",
+        emergencyContactRelation: String = "",
+        insuranceProvider: String = "",
+        policyNumber: String = "",
     ) {
         prefs?.edit()
             ?.putString("health_weight_kg", weightKg.toString())
             ?.putString("health_height_cm", heightCm.toString())
             ?.putString("health_blood_type", bloodType)
+            ?.putString("health_rh_factor", rhFactor)
+            ?.putString("health_birth_date", birthDate)
+            ?.putString("health_gender", gender)
+            ?.putString("health_emerg_name", emergencyContactName)
+            ?.putString("health_emerg_phone", emergencyContactPhone)
+            ?.putString("health_emerg_rel", emergencyContactRelation)
+            ?.putString("health_insurance", insuranceProvider)
+            ?.putString("health_policy", policyNumber)
             ?.apply()
     }
 
     open fun healthWeightKg(): Double? = prefs?.getString("health_weight_kg", null)?.toDoubleOrNull()
-
     open fun healthHeightCm(): Int? = prefs?.getString("health_height_cm", null)?.toIntOrNull()
-
     open fun healthBloodType(): String? = prefs?.getString("health_blood_type", null)
+    open fun healthRhFactor(): String = prefs?.getString("health_rh_factor", "+") ?: "+"
+    open fun healthBirthDate(): String = prefs?.getString("health_birth_date", "") ?: ""
+    open fun healthGender(): String = prefs?.getString("health_gender", "No especificado") ?: "No especificado"
+    open fun healthEmergencyName(): String = prefs?.getString("health_emerg_name", "") ?: ""
+    open fun healthEmergencyPhone(): String = prefs?.getString("health_emerg_phone", "") ?: ""
+    open fun healthEmergencyRelation(): String = prefs?.getString("health_emerg_rel", "") ?: ""
+    open fun healthInsuranceProvider(): String = prefs?.getString("health_insurance", "") ?: ""
+    open fun healthPolicyNumber(): String = prefs?.getString("health_policy", "") ?: ""
+
+    open fun saveUserProfile(firstName: String, lastName: String, email: String, phone: String) {
+        prefs?.edit()
+            ?.putString("user_first_name", firstName)
+            ?.putString("user_last_name", lastName)
+            ?.putString("user_email", email)
+            ?.putString("user_phone", phone)
+            ?.apply()
+    }
+
+    open fun userFirstName(): String? = prefs?.getString("user_first_name", null)
+    open fun userLastName(): String? = prefs?.getString("user_last_name", null)
+    open fun userEmail(): String? = prefs?.getString("user_email", null)
+    open fun userPhone(): String? = prefs?.getString("user_phone", null)
+
+    open fun themeMode(): String = prefs?.getString("theme_mode", "SYSTEM") ?: "SYSTEM"
+    open fun setThemeMode(mode: String) {
+        prefs?.edit()?.putString("theme_mode", mode)?.apply()
+    }
+
+    open fun accentColor(): String = prefs?.getString("accent_color", "TEAL") ?: "TEAL"
+    open fun setAccentColor(color: String) {
+        prefs?.edit()?.putString("accent_color", color)?.apply()
+    }
 
     open fun isBiometricEnabled(): Boolean = prefs?.getBoolean("biometric_auth_enabled", false) ?: false
 
@@ -87,10 +133,14 @@ open class SecureTokenStore {
     open fun clear() {
         val bioEnabled = isBiometricEnabled()
         val bioDismissed = isBiometricOptInDismissed()
+        val theme = themeMode()
+        val accent = accentColor()
         prefs?.edit()?.clear()?.apply()
-        // Preserve user preference for biometric login if preferred
+        // Preserve user preferences for UI and biometrics
         setBiometricEnabled(bioEnabled)
         setBiometricOptInDismissed(bioDismissed)
+        setThemeMode(theme)
+        setAccentColor(accent)
     }
 }
 

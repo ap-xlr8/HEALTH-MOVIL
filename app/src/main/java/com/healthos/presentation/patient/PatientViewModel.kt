@@ -8,12 +8,21 @@ import com.healthos.bluetooth.BleConnectionManager
 import com.healthos.bluetooth.BleState
 import com.healthos.bluetooth.ScannedBleDevice
 import com.healthos.domain.model.Alert
+import com.healthos.domain.model.Allergy
 import com.healthos.domain.model.DeviceProtocol
+import com.healthos.domain.model.DynamicSyncConfig
+import com.healthos.domain.model.FamilyHistory
+import com.healthos.domain.model.GynecoObstetricHistory
 import com.healthos.domain.model.HealthProfile
+import com.healthos.domain.model.LifestyleHabits
 import com.healthos.domain.model.Measurement
 import com.healthos.domain.model.Medication
+import com.healthos.domain.model.MetricType
 import com.healthos.domain.model.MlRiskResult
+import com.healthos.domain.model.NotificationPreferences
+import com.healthos.domain.model.PathologicalHistory
 import com.healthos.domain.model.SosLocation
+import com.healthos.domain.model.UserProfile
 import com.healthos.domain.model.WearableDevice
 import com.healthos.domain.repository.PatientRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -56,8 +65,34 @@ class PatientViewModel
         val healthProfile: StateFlow<HealthProfile?> =
             patientRepository.healthProfile()
                 .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        val userProfile: StateFlow<UserProfile?> =
+            patientRepository.userProfile()
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
         val bleState: StateFlow<BleState> = bleManager.connectionState
         val scannedDevices: StateFlow<List<ScannedBleDevice>> = bleManager.scannedDevices
+
+        // Clinical History Reactive Flows
+        val allergies: StateFlow<List<Allergy>> =
+            patientRepository.allergies()
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        val pathologicalHistory: StateFlow<List<PathologicalHistory>> =
+            patientRepository.pathologicalHistory()
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        val gynecoObstetricHistory: StateFlow<GynecoObstetricHistory?> =
+            patientRepository.gynecoObstetricHistory()
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        val familyHistory: StateFlow<List<FamilyHistory>> =
+            patientRepository.familyHistory()
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        val lifestyleHabits: StateFlow<LifestyleHabits?> =
+            patientRepository.lifestyleHabits()
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        val notificationPreferences: StateFlow<NotificationPreferences> =
+            patientRepository.notificationPreferences()
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), NotificationPreferences())
+        val dynamicSyncConfig: StateFlow<DynamicSyncConfig> =
+            patientRepository.dynamicSyncConfig()
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DynamicSyncConfig())
 
         private val _currentLocation = MutableStateFlow<Pair<Double, Double>?>(null)
         val currentLocation: StateFlow<Pair<Double, Double>?> = _currentLocation
@@ -73,7 +108,24 @@ class PatientViewModel
         init {
             viewModelScope.launch {
                 bleManager.measurements.collect { measurement ->
-                    patientRepository.saveBleMeasurement(measurement.heartRate.toDouble())
+                    measurement.heartRate?.let { hr ->
+                        patientRepository.saveBleMeasurementMulti(MetricType.HEART_RATE, hr.toDouble(), "bpm")
+                    }
+                    measurement.spo2?.let { spo2 ->
+                        patientRepository.saveBleMeasurementMulti(MetricType.SPO2, spo2, "%")
+                    }
+                    measurement.skinTempCelsius?.let { temp ->
+                        patientRepository.saveBleMeasurementMulti(MetricType.SKIN_TEMPERATURE, temp, "°C")
+                    }
+                    measurement.edaMicroSiemens?.let { eda ->
+                        patientRepository.saveBleMeasurementMulti(MetricType.EDA, eda, "µS")
+                    }
+                    measurement.systolicBp?.let { sbp ->
+                        patientRepository.saveBleMeasurementMulti(MetricType.BLOOD_PRESSURE_SYSTOLIC, sbp, "mmHg")
+                    }
+                    measurement.rmssd?.let { rmssd ->
+                        patientRepository.saveBleMeasurementMulti(MetricType.HRV_RMSSD, rmssd, "ms")
+                    }
                 }
             }
             startLocationUpdates()
@@ -82,7 +134,6 @@ class PatientViewModel
         fun startLocationUpdates() {
             try {
                 val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return
-                // Check latest from best provider immediately
                 val providers = listOf(
                     LocationManager.GPS_PROVIDER,
                     LocationManager.NETWORK_PROVIDER,
@@ -97,7 +148,6 @@ class PatientViewModel
                         }
                     }
                 }
-                // Register live listener on GPS and Network
                 if (manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                     manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 5000L, 5f, locationListener)
                 }
@@ -105,9 +155,7 @@ class PatientViewModel
                     manager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 5000L, 5f, locationListener)
                 }
             } catch (_: SecurityException) {
-                // Permission not yet granted
             } catch (_: Exception) {
-                // Ignore provider error
             }
         }
 
@@ -138,6 +186,9 @@ class PatientViewModel
                         protocol = DeviceProtocol.GATT_STANDARD,
                         publicKey = device.mac,
                         connected = true,
+                        batteryPercent = 100,
+                        rssi = -55,
+                        firmwareVersion = "1.0.0",
                     ),
                 )
                 _actionState.value = PatientActionState(message = "Dispositivo ${device.name} vinculado")
@@ -179,7 +230,84 @@ class PatientViewModel
         fun markMedicationTaken(id: String) {
             viewModelScope.launch {
                 patientRepository.markMedicationTaken(id)
-                _actionState.value = PatientActionState(message = "Medicamento registrado")
+                _actionState.value = PatientActionState(message = "Dosis de medicamento registrada")
+            }
+        }
+
+        // --- Clinical History Actions ---
+
+        fun addAllergy(allergy: Allergy) {
+            viewModelScope.launch {
+                patientRepository.addAllergy(allergy)
+                _actionState.value = PatientActionState(message = "Alergia registrada")
+            }
+        }
+
+        fun deleteAllergy(id: String) {
+            viewModelScope.launch {
+                patientRepository.deleteAllergy(id)
+                _actionState.value = PatientActionState(message = "Alergia eliminada")
+            }
+        }
+
+        fun addPathologicalHistory(entry: PathologicalHistory) {
+            viewModelScope.launch {
+                patientRepository.addPathologicalHistory(entry)
+                _actionState.value = PatientActionState(message = "Antecedente patológico guardado")
+            }
+        }
+
+        fun deletePathologicalHistory(id: String) {
+            viewModelScope.launch {
+                patientRepository.deletePathologicalHistory(id)
+                _actionState.value = PatientActionState(message = "Antecedente eliminado")
+            }
+        }
+
+        fun saveGynecoObstetricHistory(history: GynecoObstetricHistory) {
+            viewModelScope.launch {
+                patientRepository.saveGynecoObstetricHistory(history)
+                _actionState.value = PatientActionState(message = "Datos gineco-obstétricos guardados")
+            }
+        }
+
+        fun addFamilyHistory(entry: FamilyHistory) {
+            viewModelScope.launch {
+                patientRepository.addFamilyHistory(entry)
+                _actionState.value = PatientActionState(message = "Antecedente familiar registrado")
+            }
+        }
+
+        fun deleteFamilyHistory(id: String) {
+            viewModelScope.launch {
+                patientRepository.deleteFamilyHistory(id)
+                _actionState.value = PatientActionState(message = "Antecedente familiar eliminado")
+            }
+        }
+
+        fun saveLifestyleHabits(habits: LifestyleHabits) {
+            viewModelScope.launch {
+                patientRepository.saveLifestyleHabits(habits)
+                _actionState.value = PatientActionState(message = "Hábitos de vida actualizados")
+            }
+        }
+
+        fun updateNotificationPreferences(preferences: NotificationPreferences) {
+            viewModelScope.launch {
+                patientRepository.saveNotificationPreferences(preferences)
+                _actionState.value = PatientActionState(message = "Preferencias de notificación actualizadas")
+            }
+        }
+
+        fun updatePatientProfile(
+            firstName: String,
+            lastName: String,
+            phone: String,
+            healthProfile: HealthProfile,
+        ) {
+            viewModelScope.launch {
+                patientRepository.updatePatientProfile(firstName, lastName, phone, healthProfile)
+                _actionState.value = PatientActionState(message = "Perfil actualizado correctamente")
             }
         }
 
@@ -205,3 +333,4 @@ class PatientViewModel
             }
         }
     }
+

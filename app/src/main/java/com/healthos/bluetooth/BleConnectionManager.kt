@@ -39,7 +39,17 @@ sealed interface BleState {
     data class Error(val message: String) : BleState
 }
 
-data class BleMeasurement(val heartRate: Int)
+data class BleMeasurement(
+    val heartRate: Int? = null,
+    val spo2: Double? = null,
+    val skinTempCelsius: Double? = null,
+    val edaMicroSiemens: Double? = null,
+    val systolicBp: Double? = null,
+    val diastolicBp: Double? = null,
+    val pttMs: Double? = null,
+    val rmssd: Double? = null,
+    val sdnn: Double? = null,
+)
 
 data class ScannedBleDevice(
     val mac: String,
@@ -51,7 +61,7 @@ class BleConnectionManager(private val context: Context) {
     private val _connectionState = MutableStateFlow<BleState>(BleState.Disconnected)
     val connectionState: StateFlow<BleState> = _connectionState
 
-    private val _measurements = MutableSharedFlow<BleMeasurement>(extraBufferCapacity = 8)
+    private val _measurements = MutableSharedFlow<BleMeasurement>(extraBufferCapacity = 16)
     val measurements: SharedFlow<BleMeasurement> = _measurements
 
     private val _scannedDevices = MutableStateFlow<List<ScannedBleDevice>>(emptyList())
@@ -112,7 +122,11 @@ class BleConnectionManager(private val context: Context) {
             ScanSettings.Builder()
                 .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
                 .build()
-        val filters = listOf(ScanFilter.Builder().setServiceUuid(ParcelUuid(HEART_RATE_SERVICE_UUID)).build())
+        val filters = listOf(
+            ScanFilter.Builder().setServiceUuid(ParcelUuid(HEART_RATE_SERVICE_UUID)).build(),
+            ScanFilter.Builder().setServiceUuid(ParcelUuid(HEALTH_THERMOMETER_SERVICE_UUID)).build(),
+            ScanFilter.Builder().setServiceUuid(ParcelUuid(PULSE_OXIMETER_SERVICE_UUID)).build(),
+        )
         try {
             scanner.startScan(filters, settings, callback)
         } catch (e: SecurityException) {
@@ -220,10 +234,37 @@ class BleConnectionManager(private val context: Context) {
                 status: Int,
             ) {
                 if (status != BluetoothGatt.GATT_SUCCESS) return
-                val characteristic =
-                    gatt.getService(HEART_RATE_SERVICE_UUID)
-                        ?.getCharacteristic(HEART_RATE_MEASUREMENT_UUID)
-                        ?: return
+
+                // 1. Heart Rate Service
+                gatt.getService(HEART_RATE_SERVICE_UUID)?.let { service ->
+                    service.getCharacteristic(HEART_RATE_MEASUREMENT_UUID)?.let { char ->
+                        enableNotification(gatt, char)
+                    }
+                }
+
+                // 2. Health Thermometer Service
+                gatt.getService(HEALTH_THERMOMETER_SERVICE_UUID)?.let { service ->
+                    service.getCharacteristic(TEMPERATURE_MEASUREMENT_UUID)?.let { char ->
+                        enableNotification(gatt, char)
+                    }
+                }
+
+                // 3. Pulse Oximeter Service
+                gatt.getService(PULSE_OXIMETER_SERVICE_UUID)?.let { service ->
+                    service.getCharacteristic(SPO2_MEASUREMENT_UUID)?.let { char ->
+                        enableNotification(gatt, char)
+                    }
+                }
+
+                // 4. Blood Pressure Service
+                gatt.getService(BLOOD_PRESSURE_SERVICE_UUID)?.let { service ->
+                    service.getCharacteristic(BLOOD_PRESSURE_MEASUREMENT_UUID)?.let { char ->
+                        enableNotification(gatt, char)
+                    }
+                }
+            }
+
+            private fun enableNotification(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
                 gatt.setCharacteristicNotification(characteristic, true)
                 characteristic.getDescriptor(CLIENT_CHARACTERISTIC_CONFIG_UUID)?.let { descriptor ->
                     descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
@@ -235,8 +276,44 @@ class BleConnectionManager(private val context: Context) {
                 gatt: BluetoothGatt,
                 characteristic: BluetoothGattCharacteristic,
             ) {
-                if (characteristic.uuid == HEART_RATE_MEASUREMENT_UUID) {
-                    parseHeartRate(characteristic.value)?.let { _measurements.tryEmit(BleMeasurement(it)) }
+                when (characteristic.uuid) {
+                    HEART_RATE_MEASUREMENT_UUID -> {
+                        val parsed = HeartRateParser.parseDetailed(characteristic.value)
+                        if (parsed != null) {
+                            _measurements.tryEmit(
+                                BleMeasurement(
+                                    heartRate = parsed.heartRate,
+                                    rmssd = parsed.rmssd,
+                                    sdnn = parsed.sdnn,
+                                ),
+                            )
+                        }
+                    }
+                    TEMPERATURE_MEASUREMENT_UUID -> {
+                        BleTelemetryParser.parseTemperature(characteristic.value)?.let {
+                            _measurements.tryEmit(BleMeasurement(skinTempCelsius = it.value))
+                        }
+                    }
+                    SPO2_MEASUREMENT_UUID -> {
+                        BleTelemetryParser.parseSpO2(characteristic.value)?.let {
+                            _measurements.tryEmit(BleMeasurement(spo2 = it.value))
+                        }
+                    }
+                    BLOOD_PRESSURE_MEASUREMENT_UUID -> {
+                        BleTelemetryParser.parseBloodPressure(characteristic.value)?.let {
+                            _measurements.tryEmit(
+                                BleMeasurement(
+                                    systolicBp = it.value,
+                                    diastolicBp = it.secondaryValue,
+                                ),
+                            )
+                        }
+                    }
+                    EDA_MEASUREMENT_UUID -> {
+                        BleTelemetryParser.parseEda(characteristic.value)?.let {
+                            _measurements.tryEmit(BleMeasurement(edaMicroSiemens = it.value))
+                        }
+                    }
                 }
             }
         }
@@ -248,6 +325,19 @@ class BleConnectionManager(private val context: Context) {
     companion object {
         val HEART_RATE_SERVICE_UUID: UUID = UUID.fromString("0000180d-0000-1000-8000-00805f9b34fb")
         val HEART_RATE_MEASUREMENT_UUID: UUID = UUID.fromString("00002a37-0000-1000-8000-00805f9b34fb")
+
+        val HEALTH_THERMOMETER_SERVICE_UUID: UUID = UUID.fromString("00001809-0000-1000-8000-00805f9b34fb")
+        val TEMPERATURE_MEASUREMENT_UUID: UUID = UUID.fromString("00002a1c-0000-1000-8000-00805f9b34fb")
+
+        val PULSE_OXIMETER_SERVICE_UUID: UUID = UUID.fromString("00001822-0000-1000-8000-00805f9b34fb")
+        val SPO2_MEASUREMENT_UUID: UUID = UUID.fromString("00002a5e-0000-1000-8000-00805f9b34fb")
+
+        val BLOOD_PRESSURE_SERVICE_UUID: UUID = UUID.fromString("00001810-0000-1000-8000-00805f9b34fb")
+        val BLOOD_PRESSURE_MEASUREMENT_UUID: UUID = UUID.fromString("00002a35-0000-1000-8000-00805f9b34fb")
+
+        val EDA_MEASUREMENT_UUID: UUID = UUID.fromString("00002a39-0000-1000-8000-00805f9b34fb")
+
         val CLIENT_CHARACTERISTIC_CONFIG_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
     }
 }
+

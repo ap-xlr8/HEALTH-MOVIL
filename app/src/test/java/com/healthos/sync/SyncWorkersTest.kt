@@ -29,6 +29,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import retrofit2.Response
 
+import com.healthos.data.local.AllergyEntity
+import com.healthos.data.local.FamilyHistoryEntity
+import com.healthos.data.local.GynecoObstetricEntity
+import com.healthos.data.local.LifestyleHabitsEntity
+import com.healthos.data.local.NotificationSettingsEntity
+import com.healthos.data.local.PathologicalHistoryEntity
+import com.healthos.data.remote.DynamicSyncConfigDto
+import com.healthos.data.remote.NotificationSettingsDto
+
 class FakeDao : HealthOsDao {
     val measurementsList = mutableListOf<MeasurementEntity>()
     var updatedStatus: SyncStatus? = null
@@ -59,6 +68,10 @@ class FakeDao : HealthOsDao {
         measurementsList.add(entity)
     }
 
+    override suspend fun upsertMeasurements(entities: List<MeasurementEntity>) {
+        measurementsList.addAll(entities)
+    }
+
     override fun medications(): Flow<List<MedicationEntity>> = flowOf(emptyList())
 
     override suspend fun upsertMedications(entities: List<MedicationEntity>) {}
@@ -75,11 +88,49 @@ class FakeDao : HealthOsDao {
 
     override suspend fun deleteDevice(id: String) {}
 
+    override suspend fun updateDeviceTelemetry(id: String, batteryPercent: Int, rssi: Int, lastSync: String) {}
+
     override fun patients(): Flow<List<PatientEntity>> = flowOf(emptyList())
 
     override suspend fun patient(id: String): PatientEntity? = null
 
     override suspend fun upsertPatients(entities: List<PatientEntity>) {}
+
+    override fun allergies(): Flow<List<AllergyEntity>> = flowOf(emptyList())
+
+    override suspend fun upsertAllergy(entity: AllergyEntity) {}
+
+    override suspend fun upsertAllergies(entities: List<AllergyEntity>) {}
+
+    override suspend fun deleteAllergy(id: String) {}
+
+    override fun pathologicalHistory(): Flow<List<PathologicalHistoryEntity>> = flowOf(emptyList())
+
+    override suspend fun upsertPathologicalHistory(entity: PathologicalHistoryEntity) {}
+
+    override suspend fun upsertPathologicalHistories(entities: List<PathologicalHistoryEntity>) {}
+
+    override suspend fun deletePathologicalHistory(id: String) {}
+
+    override fun gynecoObstetric(): Flow<GynecoObstetricEntity?> = flowOf(null)
+
+    override suspend fun upsertGynecoObstetric(entity: GynecoObstetricEntity) {}
+
+    override fun familyHistory(): Flow<List<FamilyHistoryEntity>> = flowOf(emptyList())
+
+    override suspend fun upsertFamilyHistory(entity: FamilyHistoryEntity) {}
+
+    override suspend fun upsertFamilyHistories(entities: List<FamilyHistoryEntity>) {}
+
+    override suspend fun deleteFamilyHistory(id: String) {}
+
+    override fun lifestyleHabits(): Flow<LifestyleHabitsEntity?> = flowOf(null)
+
+    override suspend fun upsertLifestyleHabits(entity: LifestyleHabitsEntity) {}
+
+    override fun notificationSettings(): Flow<NotificationSettingsEntity?> = flowOf(null)
+
+    override suspend fun upsertNotificationSettings(entity: NotificationSettingsEntity) {}
 }
 
 class FakePatientApi : PatientApiService {
@@ -136,6 +187,22 @@ class FakePatientApi : PatientApiService {
 
     override suspend fun registerDevice(request: DeviceDto): Response<ApiResponse<DeviceDto>> =
         Response.success(ApiResponse(status = "success", data = request))
+
+    override suspend fun getDeviceSyncConfig(deviceId: String): Response<ApiResponse<DynamicSyncConfigDto>> =
+        Response.success(ApiResponse(status = "success", data = DynamicSyncConfigDto(deviceId = deviceId)))
+
+    override suspend fun updateDeviceSyncConfig(
+        deviceId: String,
+        request: DynamicSyncConfigDto,
+    ): Response<ApiResponse<DynamicSyncConfigDto>> = Response.success(ApiResponse(status = "success", data = request))
+
+    override suspend fun getNotificationSettings(patientId: String): Response<ApiResponse<NotificationSettingsDto>> =
+        Response.success(ApiResponse(status = "success", data = NotificationSettingsDto()))
+
+    override suspend fun updateNotificationSettings(
+        patientId: String,
+        request: NotificationSettingsDto,
+    ): Response<ApiResponse<NotificationSettingsDto>> = Response.success(ApiResponse(status = "success", data = request))
 }
 
 class SyncWorkersTest {

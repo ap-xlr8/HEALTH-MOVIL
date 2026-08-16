@@ -31,6 +31,12 @@ class NormalSyncWorker
                                 when (it.metricType) {
                                     MetricType.SPO2 -> "blood_oxygen" to "%"
                                     MetricType.HEART_RATE -> "heart_rate" to "bpm"
+                                    MetricType.SKIN_TEMPERATURE, MetricType.TEMPERATURE -> "skin_temperature" to "°C"
+                                    MetricType.EDA -> "electrodermal_activity" to "µS"
+                                    MetricType.BLOOD_PRESSURE_SYSTOLIC, MetricType.BLOOD_PRESSURE -> "blood_pressure" to "mmHg"
+                                    MetricType.PTT -> "pulse_transit_time" to "ms"
+                                    MetricType.HRV_RMSSD, MetricType.HRV_SDNN -> "hrv" to "ms"
+                                    MetricType.GLUCOSE -> "glucose" to "mg/dL"
                                     else -> "heart_rate" to "bpm"
                                 }
                             SyncMeasurementItemDto(
@@ -71,28 +77,43 @@ class CriticalSyncWorker
             if (eventId.isBlank()) return Result.failure()
             return try {
                 val nowStr = java.time.Instant.now().toString()
-                val latestHr = dao.measurements("HEART_RATE", 1).firstOrNull()?.value
-                if (latestHr == null) {
-                    // Sin medición real no se inventa una frecuencia cardíaca.
-                    return Result.success()
-                }
-                val request =
-                    SyncMeasurementsRequestDto(
-                        deviceId = "CRITICAL_EVENT_$eventId",
-                        data =
-                            listOf(
-                                SyncMeasurementItemDto(
-                                    type = "heart_rate",
-                                    value = latestHr,
-                                    unit = "bpm",
-                                    timestamp = nowStr,
-                                ),
-                            ),
+                val latestHr = dao.measurements("HEART_RATE", 1).firstOrNull()?.value ?: 0.0
+                val latestSpo2 = dao.measurements("SPO2", 1).firstOrNull()?.value ?: 0.0
+
+                val items = mutableListOf<SyncMeasurementItemDto>()
+                if (latestHr > 0.0) {
+                    items.add(
+                        SyncMeasurementItemDto(
+                            type = "heart_rate",
+                            value = latestHr,
+                            unit = "bpm",
+                            timestamp = nowStr,
+                        ),
                     )
-                patientApi.syncMeasurements(request)
+                }
+                if (latestSpo2 > 0.0) {
+                    items.add(
+                        SyncMeasurementItemDto(
+                            type = "blood_oxygen",
+                            value = latestSpo2,
+                            unit = "%",
+                            timestamp = nowStr,
+                        ),
+                    )
+                }
+
+                if (items.isNotEmpty()) {
+                    val request =
+                        SyncMeasurementsRequestDto(
+                            deviceId = "CRITICAL_EVENT_$eventId",
+                            data = items,
+                        )
+                    patientApi.syncMeasurements(request)
+                }
                 Result.success()
             } catch (_: Exception) {
                 Result.retry()
             }
         }
     }
+
