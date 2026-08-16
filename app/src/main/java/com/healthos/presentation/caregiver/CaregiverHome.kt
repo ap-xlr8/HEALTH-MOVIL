@@ -3,6 +3,7 @@ package com.healthos.presentation.caregiver
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,10 +29,9 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -43,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -52,16 +53,28 @@ import com.healthos.domain.model.PatientSummary
 import com.healthos.presentation.HealthScaffold
 import com.healthos.presentation.InfoCard
 import com.healthos.presentation.common.ProvideWindowSizeInfo
-
-private val Panel = Color(0xFF121B2D)
-private val PanelDeep = Color(0xFF050A18)
-private val StrokeLine = Color(0xFF26344E)
-private val TextMain = Color.White
-private val TextMuted = Color(0xFFA8B7D2)
-private val TealBright = Color(0xFF19E3BC)
-private val Blue = Color(0xFF72B7FF)
-private val PinkSoft = Color(0xFFFF6F91)
-private val Yellow = Color(0xFFFFC247)
+import com.healthos.presentation.theme.AmberDeep
+import com.healthos.presentation.theme.AmberWarning
+import com.healthos.presentation.theme.BlueBright
+import com.healthos.presentation.theme.BorderMedium
+import com.healthos.presentation.theme.BorderSubtle
+import com.healthos.presentation.theme.CardShape
+import com.healthos.presentation.theme.CoralBright
+import com.healthos.presentation.theme.CoralCritical
+import com.healthos.presentation.theme.CoralDeep
+import com.healthos.presentation.theme.HealthBadge
+import com.healthos.presentation.theme.HealthCard
+import com.healthos.presentation.theme.MintDeep
+import com.healthos.presentation.theme.MintSuccess
+import com.healthos.presentation.theme.PanelDeep
+import com.healthos.presentation.theme.PanelSurface
+import com.healthos.presentation.theme.StatusDot
+import com.healthos.presentation.theme.SurfaceElevated
+import com.healthos.presentation.theme.TealBright
+import com.healthos.presentation.theme.TealContainer
+import com.healthos.presentation.theme.TextPrimary
+import com.healthos.presentation.theme.TextSecondary
+import com.healthos.presentation.theme.TextTertiary
 
 @Composable
 fun CaregiverHome(
@@ -77,13 +90,18 @@ fun CaregiverHome(
 
     ProvideWindowSizeInfo { sizeInfo ->
         if (sizeInfo.isLandscape || !sizeInfo.isCompact) {
-            // Split View / Master-Detail layout for wide screens and landscape
-            HealthScaffold("Cuidador • Monitor", listOf("Dashboard", "Cuenta"), selectedTab.coerceAtMost(1), {
-                selectedTab = it
-            }, onLogout, modifier) { contentModifier ->
+            // Master-Detail split view for wide screens and landscape
+            HealthScaffold(
+                title = "Cuidador • Monitor",
+                tabs = listOf("Dashboard", "Cuenta"),
+                selected = selectedTab.coerceAtMost(1),
+                onSelect = { selectedTab = it },
+                onLogout = onLogout,
+                modifier = modifier,
+            ) { contentModifier ->
                 if (selectedTab == 0) {
                     CaregiverSplitView(
-                        modifier = contentModifier,
+                        modifier = contentModifier.padding(16.dp),
                         patients = patients,
                         selectedPatient = selectedPatient,
                         onSelectPatient = { selectedPatientId = it.id },
@@ -94,37 +112,52 @@ fun CaregiverHome(
                         contentAlignment = Alignment.TopCenter,
                     ) {
                         Column(
-                            modifier = Modifier.widthIn(max = 600.dp).fillMaxWidth().padding(16.dp),
+                            modifier = Modifier
+                                .widthIn(max = 600.dp)
+                                .fillMaxWidth()
+                                .padding(16.dp),
                         ) {
-                            InfoCard("Cuenta de Cuidador", "Sesión de cuidador activa y sincronizada con el panel clínico.")
-                            InfoCard("Seguridad", "Cifrado de extremo a extremo activado.")
+                            InfoCard("Cuenta de Cuidador", "Sesión de cuidador clínica activa y sincronizada en tiempo real.")
+                            InfoCard("Seguridad", "Cifrado de extremo a extremo y autenticación de doble factor 2FA activos.")
                         }
                     }
                 }
             }
         } else {
-            // Compact Tabbed layout for mobile portrait
-            HealthScaffold("Cuidador", tabs, selectedTab, { selectedTab = it }, onLogout, modifier) { contentModifier ->
+            // Compact Tabbed layout for portrait mobile
+            HealthScaffold(
+                title = "Panel Cuidador",
+                tabs = tabs,
+                selected = selectedTab,
+                onSelect = { selectedTab = it },
+                onLogout = onLogout,
+                modifier = modifier,
+            ) { contentModifier ->
                 Box(
                     modifier = contentModifier.fillMaxSize(),
                     contentAlignment = Alignment.TopCenter,
                 ) {
                     Column(
-                        modifier = Modifier.widthIn(max = 600.dp).fillMaxWidth(),
+                        modifier = Modifier
+                            .widthIn(max = 600.dp)
+                            .fillMaxWidth()
+                            .padding(16.dp),
                     ) {
                         when (selectedTab) {
-                            0 ->
-                                PatientListScreen(
-                                    patients = patients,
-                                    selectedPatient = selectedPatient,
-                                    onSelectPatient = {
-                                        selectedPatientId = it.id
-                                        selectedTab = 1
-                                    },
-                                )
+                            0 -> PatientListScreen(
+                                patients = patients,
+                                selectedPatient = selectedPatient,
+                                onSelectPatient = {
+                                    selectedPatientId = it.id
+                                    selectedTab = 1
+                                },
+                            )
                             1 -> PatientDetailScreen(selectedPatient)
                             2 -> CaregiverAlertsScreen(patients)
-                            3 -> InfoCard("Cuenta", "Sesión de cuidador activa (JWT Bearer Token)")
+                            3 -> {
+                                InfoCard("Cuenta de Cuidador", "Sesión de cuidador clínica activa (JWT Bearer Token).")
+                                InfoCard("Protocolo de Triaje", "Alertas automáticas en caso de arritmia o hipoxia.")
+                            }
                         }
                     }
                 }
@@ -146,13 +179,17 @@ private fun CaregiverSplitView(
     ) {
         // Left Master Pane: Patient List
         Column(
-            modifier =
-                Modifier
-                    .weight(1f)
-                    .fillMaxHeight(),
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight(),
         ) {
-            Text("Pacientes Monitoreados", color = TextMain, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(10.dp))
+            Text(
+                text = "Pacientes Monitoreados",
+                color = TextPrimary,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Black,
+            )
+            Spacer(Modifier.height(12.dp))
             if (patients.isEmpty()) {
                 InfoCard("Pacientes", "No tienes pacientes asignados todavía.")
             } else {
@@ -174,18 +211,22 @@ private fun CaregiverSplitView(
 
         // Right Detail Pane: Patient Details & Telemetry
         Column(
-            modifier =
-                Modifier
-                    .weight(1.3f)
-                    .fillMaxHeight()
-                    .verticalScroll(rememberScrollState()),
+            modifier = Modifier
+                .weight(1.3f)
+                .fillMaxHeight()
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Detalle del Paciente", color = Blue, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text(
+                text = "Telemetría y Signos Vitales",
+                color = BlueBright,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Black,
+            )
             if (selectedPatient != null) {
                 PatientDetailCard(selectedPatient)
             } else {
-                InfoCard("Detalle", "Selecciona un paciente para ver su telemetría en tiempo real.")
+                InfoCard("Detalle", "Selecciona un paciente de la lista para inspeccionar sus métricas.")
             }
         }
     }
@@ -198,15 +239,33 @@ private fun PatientListScreen(
     onSelectPatient: (PatientSummary) -> Unit,
 ) {
     LazyColumn(
-        contentPadding = PaddingValues(vertical = 8.dp),
+        contentPadding = PaddingValues(vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item {
-            Text("Pacientes Asignados", color = TextMain, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Pacientes Asignados",
+                    color = TextPrimary,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Black,
+                )
+                HealthBadge(
+                    text = "${patients.size} PACIENTES",
+                    color = BlueBright,
+                    backgroundColor = PanelDeep,
+                    fontSize = 10.sp,
+                )
+            }
         }
+
         if (patients.isEmpty()) {
             item {
-                InfoCard("Pacientes", "No tienes pacientes asignados todavía.")
+                InfoCard("Pacientes", "No tienes pacientes asignados en este momento.")
             }
         } else {
             items(patients) { patient ->
@@ -226,58 +285,56 @@ private fun PatientCard(
     isSelected: Boolean,
     onClick: () -> Unit,
 ) {
-    val isAlert = patient.status != AlertStatus.NORMAL
-    val borderColor =
-        if (isSelected) {
-            TealBright
-        } else if (isAlert) {
-            PinkSoft
-        } else {
-            StrokeLine
-        }
+    val isCritical = patient.status == AlertStatus.CRITICAL
+    val isAlert = patient.status == AlertStatus.ALERT
+    val statusColor = if (isCritical) CoralBright else if (isAlert) AmberWarning else MintSuccess
+    val statusBg = if (isCritical) CoralDeep else if (isAlert) AmberDeep else MintDeep
 
-    Card(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .border(1.dp, borderColor, RoundedCornerShape(16.dp))
-                .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = if (isSelected) Color(0xFF16253D) else Panel),
+    HealthCard(
+        modifier = Modifier.clickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = ripple(color = TealBright.copy(alpha = 0.2f)),
+            onClick = onClick,
+        ),
+        containerColor = if (isSelected) SurfaceElevated else PanelSurface,
+        borderColor = if (isSelected) TealBright else if (isCritical) CoralBright.copy(alpha = 0.6f) else BorderSubtle,
+        borderWidth = if (isSelected) 1.5.dp else 1.dp,
     ) {
         Row(
-            modifier = Modifier.padding(14.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                modifier =
-                    Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(if (isAlert) PinkSoft.copy(alpha = 0.2f) else TealBright.copy(alpha = 0.15f)),
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(CircleShape)
+                    .background(statusBg)
+                    .border(1.dp, statusColor.copy(alpha = 0.5f), CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    imageVector = if (isAlert) Icons.Filled.Warning else Icons.Filled.Person,
+                    imageVector = if (isCritical || isAlert) Icons.Filled.Warning else Icons.Filled.Person,
                     contentDescription = null,
-                    tint = if (isAlert) PinkSoft else TealBright,
+                    tint = statusColor,
                     modifier = Modifier.size(22.dp),
                 )
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(patient.firstName, color = TextMain, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text(patient.firstName, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Spacer(Modifier.height(2.dp))
                 Text(
-                    patient.latestMeasurement?.let { "${it.metricType.name}: ${it.value} ${it.unit}" } ?: "Sin mediciones recientes",
-                    color = TextMuted,
-                    fontSize = 13.sp,
+                    patient.latestMeasurement?.let { "${it.metricType.name}: ${it.value} ${it.unit}" } ?: "Sin registros recientes",
+                    color = TextSecondary,
+                    fontSize = 12.sp,
                 )
             }
-            Text(
+            HealthBadge(
                 text = patient.status.name,
-                color = if (isAlert) PinkSoft else TealBright,
-                fontWeight = FontWeight.Bold,
-                fontSize = 12.sp,
+                color = statusColor,
+                backgroundColor = statusBg,
+                fontSize = 11.sp,
+                hasDot = isCritical,
             )
         }
     }
@@ -286,7 +343,7 @@ private fun PatientCard(
 @Composable
 private fun PatientDetailScreen(patient: PatientSummary?) {
     if (patient == null) {
-        InfoCard("Detalle", "Selecciona un paciente para ver su información.")
+        InfoCard("Detalle", "Selecciona un paciente para ver su información clínica.")
     } else {
         Column(
             modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -299,66 +356,83 @@ private fun PatientDetailScreen(patient: PatientSummary?) {
 
 @Composable
 private fun PatientDetailCard(patient: PatientSummary) {
-    val isAlert = patient.status != AlertStatus.NORMAL
+    val isCritical = patient.status == AlertStatus.CRITICAL
+    val isAlert = patient.status == AlertStatus.ALERT
+    val statusColor = if (isCritical) CoralBright else if (isAlert) AmberWarning else MintSuccess
+    val statusBg = if (isCritical) CoralDeep else if (isAlert) AmberDeep else MintDeep
 
-    Card(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(18.dp))
-                .border(1.dp, StrokeLine, RoundedCornerShape(18.dp)),
-        colors = CardDefaults.cardColors(containerColor = Panel),
+    HealthCard(
+        containerColor = PanelSurface,
+        borderColor = BorderMedium,
     ) {
-        Column(Modifier.padding(18.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column {
+                Text(
+                    text = patient.firstName,
+                    color = TextPrimary,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Black,
+                )
+                Text(
+                    text = "ID: ${patient.id}",
+                    color = TextTertiary,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                )
+            }
+            HealthBadge(
+                text = patient.status.name,
+                color = statusColor,
+                backgroundColor = statusBg,
+                fontSize = 11.sp,
+                hasDot = isCritical,
+            )
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        patient.latestMeasurement?.let { measurement ->
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(PanelDeep)
+                    .border(1.dp, BorderSubtle, RoundedCornerShape(14.dp))
+                    .padding(14.dp),
             ) {
-                Text(patient.firstName, color = TextMain, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = if (isAlert) Icons.Filled.Warning else Icons.Filled.CheckCircle,
-                        contentDescription = null,
-                        tint = if (isAlert) PinkSoft else TealBright,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        patient.status.name,
-                        color = if (isAlert) PinkSoft else TealBright,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                    )
-                }
-            }
-            Spacer(Modifier.height(14.dp))
-            patient.latestMeasurement?.let { m ->
-                Box(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(PanelDeep)
-                            .border(1.dp, StrokeLine, RoundedCornerShape(12.dp))
-                            .padding(14.dp),
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.Favorite, null, tint = PinkSoft, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text(m.metricType.name, color = TextMain, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(CoralDeep),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(Icons.Filled.Favorite, null, tint = CoralBright, modifier = Modifier.size(20.dp))
                         }
-                        Text("${m.value} ${m.unit}", color = TealBright, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                        Spacer(Modifier.width(10.dp))
+                        Column {
+                            Text(measurement.metricType.name, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text("Última telemetría", color = TextSecondary, fontSize = 11.sp)
+                        }
                     }
+                    Text(
+                        text = "${measurement.value} ${measurement.unit}",
+                        color = TealBright,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 20.sp,
+                    )
                 }
             }
-            Spacer(Modifier.height(10.dp))
-            Text("ID Paciente: ${patient.id}", color = TextMuted, fontSize = 12.sp)
         }
     }
 }
@@ -366,33 +440,69 @@ private fun PatientDetailCard(patient: PatientSummary) {
 @Composable
 private fun CaregiverAlertsScreen(patients: List<PatientSummary>) {
     val alertPatients = patients.filter { it.status != AlertStatus.NORMAL }
+
     Column(
         modifier = Modifier.verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Alertas Clínicas", color = TextMain, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Alertas Clínicas de Pacientes",
+                color = TextPrimary,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Black,
+            )
+            HealthBadge(
+                text = "${alertPatients.size} ACTIVAS",
+                color = if (alertPatients.isNotEmpty()) CoralBright else MintSuccess,
+                backgroundColor = if (alertPatients.isNotEmpty()) CoralDeep else MintDeep,
+                fontSize = 10.sp,
+            )
+        }
+
         if (alertPatients.isEmpty()) {
-            InfoCard("Alertas", "No hay pacientes con eventos críticos en este momento.")
+            InfoCard("Alertas", "No hay pacientes con eventos críticos o anomalías en este momento.")
         } else {
-            alertPatients.forEach {
-                Card(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
-                            .border(1.dp, PinkSoft, RoundedCornerShape(16.dp)),
-                    colors = CardDefaults.cardColors(containerColor = Panel),
+            alertPatients.forEach { patient ->
+                val isCritical = patient.status == AlertStatus.CRITICAL
+                HealthCard(
+                    containerColor = PanelSurface,
+                    borderColor = if (isCritical) CoralBright else AmberWarning,
                 ) {
                     Row(
-                        modifier = Modifier.padding(16.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Icons.Filled.Warning, null, tint = PinkSoft, modifier = Modifier.size(24.dp))
-                        Spacer(Modifier.width(12.dp))
-                        Column {
-                            Text(it.firstName, color = TextMain, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            Text("Estado: ${it.status.name}", color = PinkSoft, fontSize = 13.sp)
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(if (isCritical) CoralDeep else AmberDeep),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                Icons.Filled.Warning,
+                                null,
+                                tint = if (isCritical) CoralBright else AmberWarning,
+                                modifier = Modifier.size(24.dp),
+                            )
                         }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(patient.firstName, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            Spacer(Modifier.height(2.dp))
+                            Text("Triaje: ${patient.status.name}", color = if (isCritical) CoralBright else AmberWarning, fontSize = 12.sp)
+                        }
+                        HealthBadge(
+                            text = if (isCritical) "URGENTE" else "ATENCIÓN",
+                            color = if (isCritical) CoralBright else AmberWarning,
+                            backgroundColor = if (isCritical) CoralDeep else AmberDeep,
+                            fontSize = 10.sp,
+                        )
                     }
                 }
             }

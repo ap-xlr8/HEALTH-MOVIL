@@ -72,8 +72,25 @@ open class SecureTokenStore {
 
     open fun healthBloodType(): String? = prefs?.getString("health_blood_type", null)
 
+    open fun isBiometricEnabled(): Boolean = prefs?.getBoolean("biometric_auth_enabled", false) ?: false
+
+    open fun setBiometricEnabled(enabled: Boolean) {
+        prefs?.edit()?.putBoolean("biometric_auth_enabled", enabled)?.apply()
+    }
+
+    open fun isBiometricOptInDismissed(): Boolean = prefs?.getBoolean("biometric_opt_in_dismissed", false) ?: false
+
+    open fun setBiometricOptInDismissed(dismissed: Boolean) {
+        prefs?.edit()?.putBoolean("biometric_opt_in_dismissed", dismissed)?.apply()
+    }
+
     open fun clear() {
+        val bioEnabled = isBiometricEnabled()
+        val bioDismissed = isBiometricOptInDismissed()
         prefs?.edit()?.clear()?.apply()
+        // Preserve user preference for biometric login if preferred
+        setBiometricEnabled(bioEnabled)
+        setBiometricOptInDismissed(bioDismissed)
     }
 }
 

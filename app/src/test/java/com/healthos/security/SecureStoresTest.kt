@@ -27,7 +27,20 @@ class InMemoryTokenStore : SecureTokenStore() {
 
     override fun role(): String? = tokenMap["role"]
 
-    override fun userId(): String? = tokenMap["user_id"]
+    private var bioEnabled = false
+    private var bioDismissed = false
+
+    override fun isBiometricEnabled(): Boolean = bioEnabled
+
+    override fun setBiometricEnabled(enabled: Boolean) {
+        bioEnabled = enabled
+    }
+
+    override fun isBiometricOptInDismissed(): Boolean = bioDismissed
+
+    override fun setBiometricOptInDismissed(dismissed: Boolean) {
+        bioDismissed = dismissed
+    }
 
     override fun clear() {
         tokenMap.clear()
@@ -51,6 +64,22 @@ class SecureStoresTest {
         assertNull(store.accessToken())
         assertNull(store.refreshToken())
         assertNull(store.role())
+    }
+
+    @Test
+    fun testBiometricPreferencesToggle() {
+        val store = InMemoryTokenStore()
+        assertTrue(!store.isBiometricEnabled())
+        assertTrue(!store.isBiometricOptInDismissed())
+
+        store.setBiometricEnabled(true)
+        store.setBiometricOptInDismissed(true)
+
+        assertTrue(store.isBiometricEnabled())
+        assertTrue(store.isBiometricOptInDismissed())
+
+        store.setBiometricEnabled(false)
+        assertTrue(!store.isBiometricEnabled())
     }
 
     @Test

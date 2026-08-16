@@ -4,14 +4,20 @@ import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -66,7 +72,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -76,7 +84,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -100,21 +110,42 @@ import com.healthos.domain.model.MetricType
 import com.healthos.domain.model.WearableDevice
 import com.healthos.presentation.common.ProvideWindowSizeInfo
 import com.healthos.presentation.common.WindowSizeInfo
+import com.healthos.presentation.theme.AmberDeep
+import com.healthos.presentation.theme.AmberWarning
+import com.healthos.presentation.theme.BadgeShape
+import com.healthos.presentation.theme.BlueBright
+import com.healthos.presentation.theme.BlueDeep
+import com.healthos.presentation.theme.BlueElectric
+import com.healthos.presentation.theme.BorderGlow
+import com.healthos.presentation.theme.BorderMedium
+import com.healthos.presentation.theme.BorderSubtle
+import com.healthos.presentation.theme.ButtonShape
+import com.healthos.presentation.theme.ButtonVariant
+import com.healthos.presentation.theme.CardShape
+import com.healthos.presentation.theme.CoralBright
+import com.healthos.presentation.theme.CoralCritical
+import com.healthos.presentation.theme.CoralDeep
+import com.healthos.presentation.theme.HealthBadge
+import com.healthos.presentation.theme.HealthButton
+import com.healthos.presentation.theme.HealthCard
+import com.healthos.presentation.theme.MidnightInk
+import com.healthos.presentation.theme.MintDeep
+import com.healthos.presentation.theme.MintSuccess
+import com.healthos.presentation.theme.PanelDeep
+import com.healthos.presentation.theme.PanelSurface
+import com.healthos.presentation.theme.PurpleAccent
+import com.healthos.presentation.theme.PurpleDeep
+import com.healthos.presentation.theme.StatusDot
+import com.healthos.presentation.theme.SurfaceElevated
+import com.healthos.presentation.theme.TealBright
+import com.healthos.presentation.theme.TealContainer
+import com.healthos.presentation.theme.TealDark
+import com.healthos.presentation.theme.TealPrimary
+import com.healthos.presentation.theme.TextDisabled
+import com.healthos.presentation.theme.TextPrimary
+import com.healthos.presentation.theme.TextSecondary
+import com.healthos.presentation.theme.TextTertiary
 import kotlin.math.roundToInt
-
-private val Ink = Color(0xFF020717)
-private val Panel = Color(0xFF121B2D)
-private val PanelDeep = Color(0xFF050A18)
-private val StrokeLine = Color(0xFF26344E)
-private val TextMain = Color.White
-private val TextMuted = Color(0xFFA8B7D2)
-private val Teal = Color(0xFF16A394)
-private val TealBright = Color(0xFF19E3BC)
-private val Blue = Color(0xFF72B7FF)
-private val Pink = Color(0xFFED2553)
-private val PinkSoft = Color(0xFFFF6F91)
-private val Purple = Color(0xFF9A68FF)
-private val Yellow = Color(0xFFFFC247)
 
 private data class PatientTab(
     val label: String,
@@ -136,15 +167,15 @@ fun PatientHome(
     val bleState by viewModel.bleState.collectAsState()
     val scannedDevices by viewModel.scannedDevices.collectAsState()
     val actionState by viewModel.actionState.collectAsState()
+    val currentLocation by viewModel.currentLocation.collectAsState()
     var selected by remember { mutableIntStateOf(0) }
-    val tabs =
-        listOf(
-            PatientTab("Inicio", Icons.Filled.Home),
-            PatientTab("Metricas", Icons.Filled.ShowChart),
-            PatientTab("SOS", Icons.Filled.Warning),
-            PatientTab("Equipos", Icons.Outlined.Sensors),
-            PatientTab("Perfil", Icons.Filled.Settings),
-        )
+    val tabs = listOf(
+        PatientTab("Inicio", Icons.Filled.Home),
+        PatientTab("Métricas", Icons.Filled.ShowChart),
+        PatientTab("SOS", Icons.Filled.Warning),
+        PatientTab("Equipos", Icons.Outlined.Sensors),
+        PatientTab("Perfil", Icons.Filled.Settings),
+    )
 
     ProvideWindowSizeInfo { sizeInfo ->
         PatientShell(
@@ -155,33 +186,37 @@ fun PatientHome(
             sizeInfo = sizeInfo,
         ) { contentModifier ->
             when (selected) {
-                0 ->
-                    DashboardScreen(
-                        modifier = contentModifier,
-                        measurements = measurements,
-                        medications = medications,
-                        alerts = alerts,
-                        devices = devices,
-                        pendingSyncCount = pendingSyncCount,
-                        actionState = actionState,
-                        sizeInfo = sizeInfo,
-                        onAnalyze = viewModel::analyzeRisk,
-                        onMedicationTaken = viewModel::markMedicationTaken,
-                    )
+                0 -> DashboardScreen(
+                    modifier = contentModifier,
+                    measurements = measurements,
+                    medications = medications,
+                    alerts = alerts,
+                    devices = devices,
+                    pendingSyncCount = pendingSyncCount,
+                    actionState = actionState,
+                    sizeInfo = sizeInfo,
+                    onAnalyze = viewModel::analyzeRisk,
+                    onMedicationTaken = viewModel::markMedicationTaken,
+                )
                 1 -> MetricsScreen(contentModifier, measurements, sizeInfo)
-                2 -> SosScreen(contentModifier, sizeInfo, viewModel::triggerSos)
-                3 ->
-                    DevicesScreen(
-                        contentModifier,
-                        devices,
-                        bleState,
-                        scannedDevices,
-                        sizeInfo,
-                        viewModel::startBleScan,
-                        viewModel::stopBleScan,
-                        viewModel::connectToScannedDevice,
-                        viewModel::unlinkDevice,
-                    )
+                2 -> SosScreen(
+                    contentModifier,
+                    sizeInfo,
+                    currentLocation,
+                    viewModel::startLocationUpdates,
+                    viewModel::triggerSos,
+                )
+                3 -> DevicesScreen(
+                    contentModifier,
+                    devices,
+                    bleState,
+                    scannedDevices,
+                    sizeInfo,
+                    viewModel::startBleScan,
+                    viewModel::stopBleScan,
+                    viewModel::connectToScannedDevice,
+                    viewModel::unlinkDevice,
+                )
                 4 -> ProfileScreen(contentModifier, healthProfile, sizeInfo, onLogout)
             }
         }
@@ -200,31 +235,29 @@ private fun PatientShell(
     if (sizeInfo.useNavRail) {
         // Landscape & Tablet layout with NavigationRail
         Row(
-            modifier =
-                modifier
-                    .fillMaxSize()
-                    .background(Ink)
-                    .statusBarsPadding(),
+            modifier = modifier
+                .fillMaxSize()
+                .background(MidnightInk)
+                .statusBarsPadding(),
         ) {
             NavigationRail(
                 modifier = Modifier.fillMaxHeight(),
-                containerColor = Panel,
-                contentColor = TextMain,
+                containerColor = PanelSurface,
+                contentColor = TextPrimary,
                 header = {
                     Column(
                         modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Box(
-                            modifier =
-                                Modifier
-                                    .size(44.dp)
-                                    .clip(CircleShape)
-                                    .background(Teal.copy(alpha = 0.25f))
-                                    .border(1.dp, TealBright, CircleShape),
+                            modifier = Modifier
+                                .size(46.dp)
+                                .clip(CircleShape)
+                                .background(TealContainer)
+                                .border(1.5.dp, TealBright, CircleShape),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Text("H", color = TealBright, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                            Text("H", color = TealBright, fontWeight = FontWeight.Black, fontSize = 20.sp)
                         }
                     }
                 },
@@ -240,14 +273,7 @@ private fun PatientShell(
                             Icon(
                                 tab.icon,
                                 contentDescription = tab.label,
-                                tint =
-                                    if (isSos) {
-                                        PinkSoft
-                                    } else if (isSelected) {
-                                        TealBright
-                                    } else {
-                                        TextMuted
-                                    },
+                                tint = if (isSos) CoralBright else if (isSelected) TealBright else TextSecondary,
                             )
                         },
                         label = {
@@ -255,24 +281,27 @@ private fun PatientShell(
                                 tab.label,
                                 fontSize = 11.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isSelected) TextMain else TextMuted,
+                                color = if (isSelected) TextPrimary else TextSecondary,
                             )
                         },
-                        colors =
-                            NavigationRailItemDefaults.colors(
-                                selectedIconColor = TealBright,
-                                indicatorColor = if (isSos) Pink.copy(alpha = 0.3f) else Teal.copy(alpha = 0.2f),
-                            ),
+                        colors = NavigationRailItemDefaults.colors(
+                            selectedIconColor = TealBright,
+                            indicatorColor = if (isSos) CoralDeep else TealContainer,
+                        ),
                     )
                 }
                 Spacer(Modifier.weight(1f))
             }
             Column(
-                modifier = Modifier.weight(1f).fillMaxHeight(),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
             ) {
                 SecurityStrip(authenticated = true)
                 Box(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
                     contentAlignment = Alignment.TopCenter,
                 ) {
                     content(Modifier.fillMaxSize())
@@ -282,11 +311,10 @@ private fun PatientShell(
     } else {
         // Compact Portrait layout with bottom bar
         Column(
-            modifier =
-                modifier
-                    .fillMaxSize()
-                    .background(Ink)
-                    .statusBarsPadding(),
+            modifier = modifier
+                .fillMaxSize()
+                .background(MidnightInk)
+                .statusBarsPadding(),
         ) {
             SecurityStrip(authenticated = true)
             Box(Modifier.weight(1f)) {
@@ -304,24 +332,43 @@ private fun PatientShell(
 @Composable
 private fun SecurityStrip(authenticated: Boolean) {
     Row(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .height(38.dp)
-                .background(Color(0xFF071024))
-                .border(1.dp, StrokeLine.copy(alpha = 0.75f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(40.dp)
+            .background(PanelDeep)
+            .border(1.dp, BorderSubtle),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Row(Modifier.padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.Security, null, tint = TextMuted, modifier = Modifier.size(16.dp))
+        Row(
+            modifier = Modifier.padding(start = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            StatusDot(color = TealBright, isPulsing = true, size = 6.dp)
+            Spacer(Modifier.width(8.dp))
+            Icon(Icons.Filled.Security, null, tint = TextSecondary, modifier = Modifier.size(15.dp))
             Spacer(Modifier.width(6.dp))
-            MonoText("SQLCipher Encrypted", color = TextMuted, size = 13)
+            Text(
+                "SQLCipher AES-256",
+                color = TextSecondary,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Medium,
+            )
         }
-        Row(Modifier.padding(end = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.Key, null, tint = TextMuted, modifier = Modifier.size(16.dp))
+        Row(
+            modifier = Modifier.padding(end = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Filled.Key, null, tint = BlueBright, modifier = Modifier.size(15.dp))
             Spacer(Modifier.width(6.dp))
-            MonoText(if (authenticated) "Token: JWT" else "No Auth", color = TextMuted, size = 13)
+            Text(
+                if (authenticated) "JWT Token Activo" else "Sin Sesión",
+                color = if (authenticated) BlueBright else CoralBright,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Medium,
+            )
         }
     }
 }
@@ -333,50 +380,79 @@ private fun PatientNavigationBar(
     onSelect: (Int) -> Unit,
 ) {
     Row(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .height(78.dp)
-                .background(Panel)
-                .border(1.dp, StrokeLine.copy(alpha = 0.65f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .height(72.dp)
+            .background(PanelSurface)
+            .border(1.dp, BorderSubtle),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         tabs.forEachIndexed { index, tab ->
             val isSelected = selected == index
             val isSos = tab.label == "SOS"
+
             Column(
-                modifier =
-                    Modifier
-                        .weight(1f)
-                        .clickable { onSelect(index) },
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(ButtonShape)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = ripple(color = if (isSos) CoralBright.copy(alpha = 0.3f) else TealBright.copy(alpha = 0.2f)),
+                    ) { onSelect(index) }
+                    .padding(vertical = 4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
-                Box(
-                    modifier =
-                        Modifier
-                            .size(if (isSos) 44.dp else 30.dp)
+                if (isSos) {
+                    // Elevated prominent SOS navigation pill
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
                             .clip(CircleShape)
-                            .background(if (isSos) Pink else Color.Transparent),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = tab.icon,
-                        contentDescription = tab.label,
-                        tint = if (isSelected || isSos) TextMain else TextMuted,
-                        modifier = Modifier.size(if (isSos) 24.dp else 22.dp),
+                            .background(CoralCritical)
+                            .border(1.dp, CoralBright, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = tab.icon,
+                            contentDescription = tab.label,
+                            tint = TextPrimary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = tab.label,
+                        color = CoralBright,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 11.sp,
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .clip(BadgeShape)
+                            .background(if (isSelected) TealContainer else Color.Transparent)
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = tab.icon,
+                            contentDescription = tab.label,
+                            tint = if (isSelected) TealBright else TextSecondary,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = tab.label,
+                        color = if (isSelected) TealBright else TextSecondary,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        fontSize = 11.sp,
+                        textAlign = TextAlign.Center,
                     )
                 }
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = tab.label,
-                    color = if (isSelected || isSos) TextMain else TextMuted,
-                    fontWeight = if (isSelected || isSos) FontWeight.Bold else FontWeight.Medium,
-                    fontSize = 12.sp,
-                    textAlign = TextAlign.Center,
-                )
             }
         }
     }
@@ -399,21 +475,21 @@ private fun DashboardScreen(
     val spo2 = measurements.firstOrNull { it.metricType == MetricType.SPO2 }
     val heartValue = heart?.value?.roundToInt()?.toString()
     val spo2Value = spo2?.value?.roundToInt()?.toString()
-    val horizontalPadding = if (sizeInfo.isCompact) 16.dp else 32.dp
+    val horizontalPadding = if (sizeInfo.isCompact) 16.dp else 28.dp
 
     Box(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.TopCenter,
     ) {
         LazyColumn(
-            modifier =
-                Modifier
-                    .widthIn(max = 1100.dp)
-                    .fillMaxWidth()
-                    .padding(horizontal = horizontalPadding),
-            contentPadding = PaddingValues(top = 20.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier
+                .widthIn(max = 1100.dp)
+                .fillMaxWidth()
+                .padding(horizontal = horizontalPadding),
+            contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
+            // Greeting & Status Header
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -421,40 +497,56 @@ private fun DashboardScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column {
-                        Text("Bienvenido de nuevo", color = Blue, fontSize = 15.sp)
+                        Text(
+                            text = "MONITOR CLÍNICO AUTÓNOMO",
+                            color = BlueBright,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.8.sp,
+                        )
+                        Spacer(Modifier.height(2.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Paciente", color = TextMain, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
+                            Text(
+                                text = "Paciente",
+                                color = TextPrimary,
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Black,
+                            )
                             Spacer(Modifier.width(8.dp))
-                            Box(Modifier.size(10.dp).clip(CircleShape).background(TealBright))
+                            StatusDot(color = TealBright, isPulsing = true, size = 10.dp)
                         }
                     }
                     Avatar()
                 }
             }
+
+            // WorkManager Outbox Sync Card
             item {
                 SyncCard(pendingSyncCount = pendingSyncCount)
             }
 
             if (sizeInfo.isCompact && !sizeInfo.isLandscape) {
-                // Single-column layout for compact portrait phones
+                // Portrait single-column cards
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         MetricTile(
-                            title = "Ritmo Cardiaco",
+                            title = "Frecuencia Cardíaca",
                             value = heartValue ?: "—",
                             unit = "bpm",
-                            status = if (heart != null) "TFLite ML On-Device" else "Sin datos",
+                            status = if (heart != null) "TFLite On-Device" else "Sin lecturas",
                             icon = Icons.Filled.Favorite,
-                            accent = PinkSoft,
+                            accentColor = CoralBright,
+                            gradientColors = listOf(Color(0xFF380C19), SurfaceElevated),
                             modifier = Modifier.weight(1f),
                         )
                         MetricTile(
-                            title = "Oxigeno SpO2",
+                            title = "Saturación SpO2",
                             value = spo2Value ?: "—",
                             unit = "%",
-                            status = if (spo2 != null) "Rango Optimo" else "Sin datos",
+                            status = if (spo2 != null) "Rango Óptimo" else "Sin lecturas",
                             icon = Icons.Outlined.Air,
-                            accent = Color(0xFF08B6D7),
+                            accentColor = BlueElectric,
+                            gradientColors = listOf(Color(0xFF0C2448), SurfaceElevated),
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -472,7 +564,7 @@ private fun DashboardScreen(
                     AlertsCompactCard(alerts = alerts)
                 }
             } else {
-                // Two-column responsive layout for tablets / landscape
+                // Two-column responsive layout for tablets and landscape
                 item {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -481,25 +573,27 @@ private fun DashboardScreen(
                         // Left Column
                         Column(
                             modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp),
                         ) {
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 MetricTile(
-                                    title = "Ritmo Cardiaco",
+                                    title = "Frecuencia Cardíaca",
                                     value = heartValue ?: "—",
                                     unit = "bpm",
-                                    status = if (heart != null) "TFLite ML On-Device" else "Sin datos",
+                                    status = if (heart != null) "TFLite On-Device" else "Sin lecturas",
                                     icon = Icons.Filled.Favorite,
-                                    accent = PinkSoft,
+                                    accentColor = CoralBright,
+                                    gradientColors = listOf(Color(0xFF380C19), SurfaceElevated),
                                     modifier = Modifier.weight(1f),
                                 )
                                 MetricTile(
-                                    title = "Oxigeno SpO2",
+                                    title = "Saturación SpO2",
                                     value = spo2Value ?: "—",
                                     unit = "%",
-                                    status = if (spo2 != null) "Rango Optimo" else "Sin datos",
+                                    status = if (spo2 != null) "Rango Óptimo" else "Sin lecturas",
                                     icon = Icons.Outlined.Air,
-                                    accent = Color(0xFF08B6D7),
+                                    accentColor = BlueElectric,
+                                    gradientColors = listOf(Color(0xFF0C2448), SurfaceElevated),
                                     modifier = Modifier.weight(1f),
                                 )
                             }
@@ -509,7 +603,7 @@ private fun DashboardScreen(
                         // Right Column
                         Column(
                             modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp),
                         ) {
                             MedicationCard(medications = medications, onMedicationTaken = onMedicationTaken)
                             AlertsCompactCard(alerts = alerts)
@@ -524,33 +618,57 @@ private fun DashboardScreen(
 @Composable
 private fun Avatar() {
     Box(
-        modifier =
-            Modifier
-                .size(48.dp)
-                .clip(CircleShape)
-                .background(Color(0xFF243147))
-                .border(1.dp, Color(0xFF46556F), CircleShape),
+        modifier = Modifier
+            .size(46.dp)
+            .clip(CircleShape)
+            .background(SurfaceElevated)
+            .border(1.5.dp, BorderMedium, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(Icons.Filled.Person, null, tint = TextMain, modifier = Modifier.size(24.dp))
+        Icon(Icons.Filled.Person, null, tint = TextPrimary, modifier = Modifier.size(24.dp))
     }
 }
 
 @Composable
 private fun SyncCard(pendingSyncCount: Int) {
-    DarkCard {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.Refresh, null, tint = Blue, modifier = Modifier.size(22.dp))
+    HealthCard(
+        containerColor = PanelSurface,
+        borderColor = BorderSubtle,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(BlueDeep)
+                    .border(1.dp, BlueElectric.copy(alpha = 0.5f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Filled.Refresh, null, tint = BlueElectric, modifier = Modifier.size(20.dp))
+            }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("WorkManager Outbox Sync", color = Blue, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 Text(
-                    if (pendingSyncCount == 0) "Todo sincronizado" else "$pendingSyncCount registros pendientes",
-                    color = TextMuted,
-                    fontSize = 13.sp,
+                    "WorkManager Outbox Sync",
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                )
+                Text(
+                    if (pendingSyncCount == 0) "Todos los datos sincronizados" else "$pendingSyncCount mediciones en cola",
+                    color = if (pendingSyncCount == 0) MintSuccess else AmberWarning,
+                    fontSize = 12.sp,
                 )
             }
-            Pill("SQLite + Room", Blue, Color(0xFF0F326C))
+            HealthBadge(
+                text = "ROOM SQLCIPHER",
+                color = BlueBright,
+                backgroundColor = BlueDeep,
+                fontSize = 10.sp,
+            )
         }
     }
 }
@@ -562,34 +680,69 @@ private fun MetricTile(
     unit: String,
     status: String,
     icon: ImageVector,
-    accent: Color,
+    accentColor: Color,
+    gradientColors: List<Color>,
     modifier: Modifier = Modifier,
 ) {
-    DarkCard(modifier = modifier.height(154.dp)) {
-        Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-            Text(title, color = TextMuted, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-            Box(
-                modifier =
-                    Modifier
-                        .size(34.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(accent.copy(alpha = 0.25f)),
-                contentAlignment = Alignment.Center,
+    HealthCard(
+        modifier = modifier.height(160.dp),
+        containerColor = PanelSurface,
+        borderColor = BorderSubtle,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                Icon(icon, null, tint = accent, modifier = Modifier.size(18.dp))
+                Text(
+                    text = title,
+                    color = TextSecondary,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 12.sp,
+                )
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(accentColor.copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(icon, null, tint = accentColor, modifier = Modifier.size(17.dp))
+                }
             }
-        }
-        Spacer(Modifier.height(12.dp))
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(value, color = TextMain, fontSize = 34.sp, fontWeight = FontWeight.ExtraBold)
-            Spacer(Modifier.width(4.dp))
-            Text(unit, color = TextMuted, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 6.dp))
-        }
-        Spacer(Modifier.weight(1f))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.Check, null, tint = TealBright, modifier = Modifier.size(15.dp))
-            Spacer(Modifier.width(4.dp))
-            Text(status, color = TealBright, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    text = value,
+                    color = TextPrimary,
+                    fontSize = 36.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = (-0.5).sp,
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    text = unit,
+                    color = TextSecondary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(bottom = 6.dp),
+                )
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                StatusDot(color = accentColor, size = 6.dp)
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = status,
+                    color = accentColor,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                )
+            }
         }
     }
 }
@@ -599,40 +752,94 @@ private fun MlRuntimeCard(
     actionState: PatientActionState,
     onAnalyze: () -> Unit,
 ) {
-    DarkCard(
-        modifier = Modifier.clickable { onAnalyze() },
+    HealthCard(
+        onClick = onAnalyze,
+        containerColor = PanelSurface,
+        borderColor = BorderMedium,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.MonitorHeart, null, tint = Purple, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("ml-runtime / TFLite Inferencia", color = TextMain, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
-            Spacer(Modifier.weight(1f))
-            Pill("TFLite 2.16", Purple, Color(0xFF3B225D))
-        }
-        Spacer(Modifier.height(10.dp))
         Row(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(PanelDeep)
-                    .border(1.dp, StrokeLine, RoundedCornerShape(12.dp))
-                    .padding(12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
         ) {
-            Column {
-                MonoText("Modelo: heart_rate_anomaly.tflite", color = TextMain, size = 14)
-                Spacer(Modifier.height(6.dp))
-                Text("Inferencia on-device sin conexión", color = TextMuted, fontSize = 12.sp)
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(PurpleDeep)
+                    .border(1.dp, PurpleAccent.copy(alpha = 0.5f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Filled.MonitorHeart, null, tint = PurpleAccent, modifier = Modifier.size(19.dp))
             }
+            Spacer(Modifier.width(10.dp))
+            Text(
+                "Inferencia ML On-Device",
+                color = TextPrimary,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+            )
+            Spacer(Modifier.weight(1f))
+            HealthBadge(
+                text = "TFLITE 2.16",
+                color = PurpleAccent,
+                backgroundColor = PurpleDeep,
+                fontSize = 10.sp,
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(PanelDeep)
+                .border(1.dp, BorderSubtle, RoundedCornerShape(12.dp))
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = "heart_rate_anomaly.tflite",
+                    color = TextPrimary,
+                    fontSize = 13.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Medium,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Detección de anomalías en tiempo real",
+                    color = TextSecondary,
+                    fontSize = 11.sp,
+                )
+            }
+
             Column(horizontalAlignment = Alignment.End) {
-                Text(actionState.risk?.label ?: "Sin analizar", color = TealBright, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Spacer(Modifier.height(6.dp))
-                val confidence = actionState.risk?.score
-                if (confidence != null) {
-                    Text("Confianza: ${(confidence * 100).roundToInt()}%", color = TealBright, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                val risk = actionState.risk
+                if (risk != null) {
+                    val riskColor = if (risk.score > 0.7f) CoralBright else MintSuccess
+                    val riskBg = if (risk.score > 0.7f) CoralDeep else MintDeep
+                    HealthBadge(
+                        text = risk.label,
+                        color = riskColor,
+                        backgroundColor = riskBg,
+                        fontSize = 11.sp,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "Confianza: ${(risk.score * 100).roundToInt()}%",
+                        color = riskColor,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
                 } else {
-                    Text("Pulsa para analizar", color = TextMuted, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    HealthBadge(
+                        text = "Analizar Vitals",
+                        color = TealBright,
+                        backgroundColor = TealContainer,
+                        fontSize = 11.sp,
+                    )
                 }
             }
         }
@@ -642,30 +849,54 @@ private fun MlRuntimeCard(
 @Composable
 private fun DeviceSummaryCard(devices: List<WearableDevice>) {
     val device = devices.firstOrNull()
-    DarkCard {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+    HealthCard(
+        containerColor = PanelSurface,
+        borderColor = BorderSubtle,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
             Box(
-                modifier =
-                    Modifier
-                        .size(46.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(Color(0xFF243147))
-                        .border(1.dp, Color(0xFF3A4A64), RoundedCornerShape(14.dp)),
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (device != null) TealContainer else SurfaceElevated)
+                    .border(1.dp, if (device != null) TealBright.copy(alpha = 0.6f) else BorderMedium, RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Filled.Bluetooth, null, tint = TealBright)
+                Icon(
+                    Icons.Filled.Bluetooth,
+                    null,
+                    tint = if (device != null) TealBright else TextSecondary,
+                    modifier = Modifier.size(22.dp),
+                )
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(device?.model ?: "Sin dispositivo vinculado", color = TextMain, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
                 Text(
-                    if (device != null) "● Conectado BLE GATT" else "Vincula tu banda wearable para registrar signos vitales.",
-                    color = if (device != null) TealBright else TextMuted,
-                    fontSize = 12.sp,
+                    text = device?.model ?: "Sin Wearable Vinculado",
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
                 )
+                Spacer(Modifier.height(2.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    StatusDot(
+                        color = if (device != null) TealBright else TextDisabled,
+                        isPulsing = device != null,
+                        size = 6.dp,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = if (device != null) "Conectado BLE GATT" else "Vincula tu banda wearable",
+                        color = if (device != null) TealBright else TextSecondary,
+                        fontSize = 12.sp,
+                    )
+                }
             }
             if (device != null) {
-                OutlinePillButton("Gestionar") {}
+                HealthBadge("ACTIVO", TealBright, TealContainer, fontSize = 10.sp)
             }
         }
     }
@@ -676,28 +907,40 @@ private fun MedicationCard(
     medications: List<Medication>,
     onMedicationTaken: (String) -> Unit,
 ) {
-    DarkCard {
+    HealthCard(
+        containerColor = PanelSurface,
+        borderColor = BorderSubtle,
+    ) {
         val taken = medications.count { it.takenToday }
 
-        Row(verticalAlignment = Alignment.Top) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(
-                "MEDICAMENTOS DE HOY",
-                color = TextMain,
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 16.sp,
-                modifier = Modifier.weight(1f),
+                text = "MEDICAMENTOS DE HOY",
+                color = TextPrimary,
+                fontWeight = FontWeight.Black,
+                fontSize = 14.sp,
+                letterSpacing = 0.5.sp,
             )
-            Text(
-                "$taken de ${medications.size}\ntomados",
-                color = TextMain,
-                fontWeight = FontWeight.Bold,
-                fontSize = 12.sp,
-                textAlign = TextAlign.Center,
+            HealthBadge(
+                text = "$taken de ${medications.size} tomados",
+                color = if (taken == medications.size && medications.isNotEmpty()) MintSuccess else AmberWarning,
+                backgroundColor = if (taken == medications.size && medications.isNotEmpty()) MintDeep else AmberDeep,
+                fontSize = 11.sp,
             )
         }
         Spacer(Modifier.height(12.dp))
+
         if (medications.isEmpty()) {
-            Text("No tienes medicamentos registrados todavía.", color = TextMuted, fontSize = 13.sp)
+            Text(
+                "No tienes prescripciones registradas.",
+                color = TextSecondary,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(vertical = 8.dp),
+            )
         } else {
             medications.forEach { medication ->
                 MedicationRow(medication = medication, onMedicationTaken = onMedicationTaken)
@@ -713,13 +956,12 @@ private fun MedicationRow(
     onMedicationTaken: (String) -> Unit,
 ) {
     Row(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .background(PanelDeep)
-                .border(1.dp, StrokeLine.copy(alpha = 0.75f), RoundedCornerShape(10.dp))
-                .padding(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(PanelDeep)
+            .border(1.dp, BorderSubtle, RoundedCornerShape(12.dp))
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Checkbox(
@@ -727,47 +969,79 @@ private fun MedicationRow(
             onCheckedChange = { checked ->
                 if (checked && !medication.takenToday) onMedicationTaken(medication.id)
             },
-            colors =
-                CheckboxDefaults.colors(
-                    checkedColor = Color(0xFF2487FF),
-                    uncheckedColor = TextMain,
-                    checkmarkColor = TextMain,
-                ),
+            colors = CheckboxDefaults.colors(
+                checkedColor = TealPrimary,
+                uncheckedColor = TextSecondary,
+                checkmarkColor = MidnightInk,
+            ),
         )
+        Spacer(Modifier.width(4.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                "${medication.name} ${medication.dose}",
-                color = TextMain,
+                text = "${medication.name} ${medication.dose}",
+                color = if (medication.takenToday) TextSecondary else TextPrimary,
                 fontWeight = FontWeight.Bold,
-                fontSize = 15.sp,
+                fontSize = 14.sp,
                 textDecoration = if (medication.takenToday) TextDecoration.LineThrough else TextDecoration.None,
             )
-            Text("${medication.schedule} • Prescripcion Diaria", color = Color(0xFF7C91B5), fontSize = 12.sp)
+            Text(
+                text = "${medication.schedule} • Prescripción Diaria",
+                color = TextTertiary,
+                fontSize = 11.sp,
+            )
         }
-        Pill(
-            text = if (medication.takenToday) "Completado" else "Pendiente",
-            color = if (medication.takenToday) TealBright else Yellow,
-            background = if (medication.takenToday) Color(0xFF063F3B) else Color(0xFF2E2413),
+        HealthBadge(
+            text = if (medication.takenToday) "Tomado" else "Pendiente",
+            color = if (medication.takenToday) MintSuccess else AmberWarning,
+            backgroundColor = if (medication.takenToday) MintDeep else AmberDeep,
+            fontSize = 11.sp,
         )
     }
 }
 
 @Composable
 private fun AlertsCompactCard(alerts: List<Alert>) {
-    DarkCard {
-        Text("Alertas activas", color = TextMain, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-        Spacer(Modifier.height(8.dp))
+    HealthCard(
+        containerColor = PanelSurface,
+        borderColor = BorderSubtle,
+    ) {
+        Text(
+            text = "ALERTAS CLÍNICAS ACTIVAS",
+            color = TextPrimary,
+            fontWeight = FontWeight.Black,
+            fontSize = 14.sp,
+            letterSpacing = 0.5.sp,
+        )
+        Spacer(Modifier.height(10.dp))
+
         if (alerts.isEmpty()) {
-            Text("Estado", color = TextMuted, fontSize = 13.sp)
-            Text("Sin eventos criticos", color = TealBright, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                StatusDot(color = MintSuccess, size = 8.dp)
+                Spacer(Modifier.width(8.dp))
+                Text("Sin eventos críticos detectados.", color = MintSuccess, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            }
         } else {
-            alerts.forEach {
-                Text(it.title, color = TextMain, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Text(
-                    "${it.status.name} - ${it.timestamp}",
-                    color = if (it.status.name == "CRITICAL") PinkSoft else Yellow,
-                    fontSize = 12.sp,
-                )
+            alerts.forEach { alert ->
+                val isCritical = alert.status.name == "CRITICAL"
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        StatusDot(color = if (isCritical) CoralBright else AmberWarning, isPulsing = isCritical, size = 8.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text(alert.title, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                    HealthBadge(
+                        text = alert.status.name,
+                        color = if (isCritical) CoralBright else AmberWarning,
+                        backgroundColor = if (isCritical) CoralDeep else AmberDeep,
+                        fontSize = 10.sp,
+                    )
+                }
             }
         }
     }
@@ -779,7 +1053,7 @@ private fun MetricsScreen(
     measurements: List<Measurement>,
     sizeInfo: WindowSizeInfo,
 ) {
-    val horizontalPadding = if (sizeInfo.isCompact) 16.dp else 32.dp
+    val horizontalPadding = if (sizeInfo.isCompact) 16.dp else 28.dp
     val heartSeries = measurements.filter { it.metricType == MetricType.HEART_RATE }.map { it.value.toFloat() }.reversed()
     val spo2Series = measurements.filter { it.metricType == MetricType.SPO2 }.map { it.value.toFloat() }.reversed()
     val heartRange = chartRange(heartSeries, 60f, 100f)
@@ -790,44 +1064,51 @@ private fun MetricsScreen(
         contentAlignment = Alignment.TopCenter,
     ) {
         LazyColumn(
-            modifier =
-                Modifier
-                    .widthIn(max = 1100.dp)
-                    .fillMaxWidth()
-                    .padding(horizontal = horizontalPadding),
-            contentPadding = PaddingValues(top = 20.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier
+                .widthIn(max = 1100.dp)
+                .fillMaxWidth()
+                .padding(horizontal = horizontalPadding),
+            contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Histórico de Métricas", color = TextMain, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp)
-                    Spacer(Modifier.weight(1f))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = "Histórico de Métricas",
+                        color = TextPrimary,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 22.sp,
+                    )
                     FilterButton()
                 }
             }
 
             if (sizeInfo.isCompact && !sizeInfo.isLandscape) {
-                // Stacked layout for compact phones
+                // Stacked charts on portrait phones
                 item {
-                    ChartCard(
+                    ModernChartCard(
                         title = "Frecuencia Cardíaca (bpm)",
                         endpoint = "GET /v1/measurements",
                         values = heartSeries,
                         minValue = heartRange.first,
                         maxValue = heartRange.second,
-                        line = Color(0xFFFF466D),
-                        fill = Color(0xFFFF466D).copy(alpha = 0.16f),
+                        lineColor = CoralBright,
+                        fillColor = CoralBright.copy(alpha = 0.16f),
                     )
                 }
                 item {
-                    ChartCard(
+                    ModernChartCard(
                         title = "Saturación SpO2 (%)",
                         endpoint = null,
                         values = spo2Series,
                         minValue = spo2Range.first,
                         maxValue = spo2Range.second,
-                        line = Color(0xFF08C8E8),
-                        fill = Color(0xFF08C8E8).copy(alpha = 0.16f),
+                        lineColor = BlueElectric,
+                        fillColor = BlueElectric.copy(alpha = 0.16f),
                     )
                 }
             } else {
@@ -838,25 +1119,25 @@ private fun MetricsScreen(
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
                         Box(Modifier.weight(1f)) {
-                            ChartCard(
+                            ModernChartCard(
                                 title = "Frecuencia Cardíaca (bpm)",
                                 endpoint = "GET /v1/measurements",
                                 values = heartSeries,
                                 minValue = heartRange.first,
                                 maxValue = heartRange.second,
-                                line = Color(0xFFFF466D),
-                                fill = Color(0xFFFF466D).copy(alpha = 0.16f),
+                                lineColor = CoralBright,
+                                fillColor = CoralBright.copy(alpha = 0.16f),
                             )
                         }
                         Box(Modifier.weight(1f)) {
-                            ChartCard(
+                            ModernChartCard(
                                 title = "Saturación SpO2 (%)",
                                 endpoint = null,
                                 values = spo2Series,
                                 minValue = spo2Range.first,
                                 maxValue = spo2Range.second,
-                                line = Color(0xFF08C8E8),
-                                fill = Color(0xFF08C8E8).copy(alpha = 0.16f),
+                                lineColor = BlueElectric,
+                                fillColor = BlueElectric.copy(alpha = 0.16f),
                             )
                         }
                     }
@@ -864,12 +1145,22 @@ private fun MetricsScreen(
             }
 
             item {
-                Text("Lecturas Recientes", color = Blue, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text(
+                    text = "LECTURAS RECIENTES",
+                    color = BlueBright,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    letterSpacing = 0.5.sp,
+                )
             }
 
             item {
                 if (measurements.isEmpty()) {
-                    Text("Aún no hay lecturas registradas.", color = TextMuted, fontSize = 13.sp)
+                    Text(
+                        "Aún no hay mediciones registradas.",
+                        color = TextSecondary,
+                        fontSize = 13.sp,
+                    )
                 } else {
                     val chunks = measurements.take(6).chunked(if (sizeInfo.isCompact && !sizeInfo.isLandscape) 1 else 2)
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -879,13 +1170,22 @@ private fun MetricsScreen(
                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                             ) {
                                 rowItems.forEach { measurement ->
-                                    DarkCard(Modifier.weight(1f)) {
-                                        Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                                            Text(measurement.metricType.name, color = TextMain, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    HealthCard(Modifier.weight(1f), containerColor = PanelDeep, borderColor = BorderSubtle) {
+                                        Row(
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.fillMaxWidth(),
+                                        ) {
+                                            Text(
+                                                measurement.metricType.name,
+                                                color = TextPrimary,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp,
+                                            )
                                             Text(
                                                 "${measurement.value} ${measurement.unit}",
                                                 color = TealBright,
-                                                fontWeight = FontWeight.Bold,
+                                                fontWeight = FontWeight.Black,
                                                 fontSize = 14.sp,
                                             )
                                         }
@@ -915,50 +1215,65 @@ private fun chartRange(
 @Composable
 private fun FilterButton() {
     Row(
-        modifier =
-            Modifier
-                .clip(RoundedCornerShape(12.dp))
-                .background(Panel)
-                .border(1.dp, Color(0xFF46556F), RoundedCornerShape(12.dp))
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+        modifier = Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(SurfaceElevated)
+            .border(1.dp, BorderMedium, RoundedCornerShape(10.dp))
+            .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("Últimos 7 Días", color = TextMain, fontSize = 13.sp)
-        Icon(Icons.Filled.KeyboardArrowDown, null, tint = TextMuted, modifier = Modifier.size(18.dp))
+        Text("Últimos 7 Días", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+        Spacer(Modifier.width(4.dp))
+        Icon(Icons.Filled.KeyboardArrowDown, null, tint = TextSecondary, modifier = Modifier.size(16.dp))
     }
 }
 
 @Composable
-private fun ChartCard(
+private fun ModernChartCard(
     title: String,
     endpoint: String?,
     values: List<Float>,
     minValue: Float,
     maxValue: Float,
-    line: Color,
-    fill: Color,
+    lineColor: Color,
+    fillColor: Color,
 ) {
-    DarkCard {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(title, color = TextMain, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, modifier = Modifier.weight(1f))
+    HealthCard(
+        containerColor = PanelSurface,
+        borderColor = BorderSubtle,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(title, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp)
             endpoint?.let {
                 val label = if (com.healthos.BuildConfig.DEBUG) it else "Historial 7D"
-                Pill(label, PinkSoft, Color(0xFF361629))
+                HealthBadge(label, CoralBright, CoralDeep, fontSize = 10.sp)
             }
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(12.dp))
+
         if (values.isEmpty()) {
-            Box(Modifier.fillMaxWidth().height(190.dp), contentAlignment = Alignment.Center) {
-                Text("Sin datos todavía", color = TextMuted, fontSize = 13.sp)
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(180.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("Sin registros para graficar", color = TextSecondary, fontSize = 13.sp)
             }
         } else {
             LineChart(
                 values = values,
                 minValue = minValue,
                 maxValue = maxValue,
-                line = line,
-                fill = fill,
-                modifier = Modifier.fillMaxWidth().height(190.dp),
+                line = lineColor,
+                fill = fillColor,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(180.dp),
             )
         }
     }
@@ -976,189 +1291,321 @@ private fun LineChart(
     val labels = listOf("Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Hoy")
     Column {
         Canvas(modifier = modifier) {
-            val left = 40.dp.toPx()
-            val bottom = 24.dp.toPx()
+            val left = 36.dp.toPx()
+            val bottom = 22.dp.toPx()
             val chartWidth = size.width - left - 8.dp.toPx()
             val chartHeight = size.height - bottom - 8.dp.toPx()
             val stepX = chartWidth / (values.size - 1).coerceAtLeast(1)
-            val yScale = chartHeight / (maxValue - minValue)
-            val points =
-                values.mapIndexed { index, value ->
-                    Offset(
-                        x = left + stepX * index,
-                        y = 8.dp.toPx() + (maxValue - value) * yScale,
-                    )
-                }
-
-            repeat(5) { index ->
-                val y = 8.dp.toPx() + chartHeight * index / 4f
-                drawLine(StrokeLine.copy(alpha = 0.65f), Offset(left, y), Offset(left + chartWidth, y), 1.dp.toPx())
-            }
-            repeat(values.size) { index ->
-                val x = left + stepX * index
-                drawLine(StrokeLine.copy(alpha = 0.65f), Offset(x, 8.dp.toPx()), Offset(x, 8.dp.toPx() + chartHeight), 1.dp.toPx())
+            val yScale = chartHeight / (maxValue - minValue).coerceAtLeast(0.001f)
+            val points = values.mapIndexed { index, value ->
+                Offset(
+                    x = left + stepX * index,
+                    y = 8.dp.toPx() + (maxValue - value) * yScale,
+                )
             }
 
-            val path =
-                Path().apply {
-                    points.forEachIndexed { index, point ->
-                        if (index == 0) moveTo(point.x, point.y) else lineTo(point.x, point.y)
-                    }
+            // Grid Horizontal Lines
+            repeat(4) { index ->
+                val y = 8.dp.toPx() + chartHeight * index / 3f
+                drawLine(BorderSubtle, Offset(left, y), Offset(left + chartWidth, y), 1.dp.toPx())
+            }
+
+            val path = Path().apply {
+                points.forEachIndexed { index, point ->
+                    if (index == 0) moveTo(point.x, point.y) else lineTo(point.x, point.y)
                 }
-            val area =
-                Path().apply {
-                    moveTo(points.first().x, 8.dp.toPx() + chartHeight)
-                    points.forEach { lineTo(it.x, it.y) }
-                    lineTo(points.last().x, 8.dp.toPx() + chartHeight)
-                    close()
-                }
+            }
+            val area = Path().apply {
+                moveTo(points.first().x, 8.dp.toPx() + chartHeight)
+                points.forEach { lineTo(it.x, it.y) }
+                lineTo(points.last().x, 8.dp.toPx() + chartHeight)
+                close()
+            }
+
             drawPath(area, fill)
-            drawPath(path, line, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round))
+            drawPath(path, line, style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
             points.forEach { point ->
-                drawCircle(line, radius = 4.dp.toPx(), center = point, style = Stroke(width = 2.dp.toPx()))
+                drawCircle(MidnightInk, radius = 4.dp.toPx(), center = point)
+                drawCircle(line, radius = 3.dp.toPx(), center = point)
             }
         }
-        Row(Modifier.fillMaxWidth().padding(start = 36.dp, end = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            labels.forEach { Text(it, color = TextMuted, fontSize = 11.sp) }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 32.dp, end = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            labels.forEach { Text(it, color = TextTertiary, fontSize = 10.sp, fontFamily = FontFamily.Monospace) }
         }
     }
 }
 
+// -------------------------------------------------------------
+// SOS SCREEN CON PULSO LUMINOSO RADIANTE MULTIANILLO CONTINUO
+// -------------------------------------------------------------
 @Composable
 private fun SosScreen(
     modifier: Modifier,
     sizeInfo: WindowSizeInfo,
+    currentLocation: Pair<Double, Double>?,
+    onStartLocationUpdates: () -> Unit,
     onSos: () -> Unit,
 ) {
+    val context = LocalContext.current
     val scrollState = rememberScrollState()
     val horizontalPadding = if (sizeInfo.isCompact) 20.dp else 40.dp
 
+    val locationPermissions = arrayOf(
+        Manifest.permission.ACCESS_FINE_LOCATION,
+        Manifest.permission.ACCESS_COARSE_LOCATION,
+    )
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { granted ->
+        if (granted.values.any { it }) {
+            onStartLocationUpdates()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        val missing = locationPermissions.filterNot {
+            context.checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            locationPermissionLauncher.launch(missing.toTypedArray())
+        } else {
+            onStartLocationUpdates()
+        }
+    }
+
+    val locationText = currentLocation?.let {
+        "Lat: ${String.format(java.util.Locale.US, "%.5f", it.first)} | Lng: ${String.format(java.util.Locale.US, "%.5f", it.second)}"
+    } ?: "Obteniendo coordenadas satelitales GPS..."
+
     Box(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier
+            .fillMaxSize()
+            .background(MidnightInk),
         contentAlignment = Alignment.Center,
     ) {
         if (sizeInfo.isLandscape) {
-            // Horizontal / Landscape side-by-side layout
             Row(
-                modifier =
-                    Modifier
-                        .widthIn(max = 1000.dp)
-                        .fillMaxSize()
-                        .padding(horizontal = horizontalPadding, vertical = 12.dp),
+                modifier = Modifier
+                    .widthIn(max = 1000.dp)
+                    .fillMaxSize()
+                    .padding(horizontal = horizontalPadding, vertical = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(24.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Left side: SOS Button
                 Box(
                     modifier = Modifier.weight(1f),
                     contentAlignment = Alignment.Center,
                 ) {
-                    SosButton(onSos = onSos, compactSize = true)
+                    RadiantSosButton(onSos = onSos, compactSize = true)
                 }
 
-                // Right side: Info Card
                 Column(
-                    modifier = Modifier.weight(1.2f).verticalScroll(scrollState),
+                    modifier = Modifier
+                        .weight(1.2f)
+                        .verticalScroll(scrollState),
                     verticalArrangement = Arrangement.Center,
                 ) {
-                    Pill("MÓDULO SOS EMERGENCIA", PinkSoft, Color(0xFF421127))
-                    Spacer(Modifier.height(8.dp))
-                    Text("Alerta Crítica Inmediata", color = TextMain, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+                    HealthBadge("MÓDULO SOS EMERGENCIA", CoralBright, CoralDeep, fontSize = 11.sp, hasDot = true)
+                    Spacer(Modifier.height(10.dp))
+                    Text("Alerta Crítica Inmediata", color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Black)
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "Presiona el botón para transmitir tu ubicación GPS actual y notificar de inmediato a tus cuidadores.",
-                        color = Blue,
-                        fontSize = 14.sp,
+                        "Presiona el botón para transmitir tu ubicación GPS actual y alertar de inmediato a tus cuidadores.",
+                        color = BlueBright,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
                     )
                     Spacer(Modifier.height(14.dp))
-                    DarkCard {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.LocationOn, null, tint = PinkSoft, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Coordenadas GPS:", color = TextMain, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        MonoText("Ubicación GPS actual del dispositivo", color = Blue, size = 13)
-                        Spacer(Modifier.height(6.dp))
-                        Text("Expedited Critical SyncWorker Outbox Active", color = Color(0xFF7183A6), fontSize = 11.sp)
-                    }
+                    GpsInfoCard(locationText = locationText)
                 }
             }
         } else {
-            // Vertical layout for portrait
             Column(
-                modifier =
-                    Modifier
-                        .widthIn(max = 600.dp)
-                        .fillMaxSize()
-                        .verticalScroll(scrollState)
-                        .padding(horizontal = horizontalPadding, vertical = 20.dp),
+                modifier = Modifier
+                    .widthIn(max = 600.dp)
+                    .fillMaxSize()
+                    .verticalScroll(scrollState)
+                    .padding(horizontal = horizontalPadding, vertical = 20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Pill("MÓDULO SOS EMERGENCIA", PinkSoft, Color(0xFF421127))
+                HealthBadge("MÓDULO SOS EMERGENCIA", CoralBright, CoralDeep, fontSize = 11.sp, hasDot = true)
                 Spacer(Modifier.height(12.dp))
-                Text("Alerta Crítica Inmediata", color = TextMain, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
+                Text(
+                    text = "Alerta Crítica Inmediata",
+                    color = TextPrimary,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Black,
+                )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Presiona el botón para transmitir tu ubicación GPS actual y notificar de inmediato a tus cuidadores.",
-                    color = Blue,
-                    fontSize = 15.sp,
+                    text = "Presiona el botón de emergencia para transmitir tu posición GPS satelital en cola expedita prioritaria a tus cuidadores.",
+                    color = TextSecondary,
+                    fontSize = 14.sp,
                     textAlign = TextAlign.Center,
+                    lineHeight = 20.sp,
                 )
-                Spacer(Modifier.height(24.dp))
-                SosButton(onSos = onSos, compactSize = false)
-                Spacer(Modifier.height(24.dp))
-                DarkCard {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.LocationOn, null, tint = PinkSoft, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Coordenadas GPS:", color = TextMain, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    MonoText("Lat: 19.4326 | Lng: -99.1332 (CDMX)", color = Blue, size = 13)
-                    Spacer(Modifier.height(6.dp))
-                    Text("Expedited Critical SyncWorker Outbox Active", color = Color(0xFF7183A6), fontSize = 12.sp)
-                }
+                Spacer(Modifier.height(28.dp))
+
+                RadiantSosButton(onSos = onSos, compactSize = false)
+
+                Spacer(Modifier.height(28.dp))
+                GpsInfoCard(locationText = locationText)
             }
         }
     }
 }
 
 @Composable
-private fun SosButton(
+private fun RadiantSosButton(
     onSos: () -> Unit,
     compactSize: Boolean,
 ) {
-    val outerSize = if (compactSize) 200.dp else 240.dp
-    val innerSize = if (compactSize) 160.dp else 194.dp
+    val outerSize = if (compactSize) 190.dp else 230.dp
+    val innerSize = if (compactSize) 140.dp else 170.dp
+
+    // Multi-ring glowing pulse animation
+    val infiniteTransition = rememberInfiniteTransition(label = "sos_pulse")
+    val wave1Scale by infiniteTransition.animateFloat(
+        initialValue = 0.95f,
+        targetValue = 1.35f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "wave1_scale",
+    )
+    val wave1Alpha by infiniteTransition.animateFloat(
+        initialValue = 0.55f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "wave1_alpha",
+    )
+
+    val wave2Scale by infiniteTransition.animateFloat(
+        initialValue = 0.95f,
+        targetValue = 1.2f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1500, delayMillis = 400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "wave2_scale",
+    )
+    val wave2Alpha by infiniteTransition.animateFloat(
+        initialValue = 0.45f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1500, delayMillis = 400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "wave2_alpha",
+    )
 
     Box(
-        modifier =
-            Modifier
-                .size(outerSize)
-                .clip(CircleShape)
-                .background(Pink.copy(alpha = 0.17f)),
+        modifier = Modifier.size(outerSize),
         contentAlignment = Alignment.Center,
     ) {
+        // Outer radiating pulse rings
+        Box(
+            modifier = Modifier
+                .size(innerSize)
+                .scale(wave1Scale)
+                .clip(CircleShape)
+                .background(CoralCritical.copy(alpha = wave1Alpha)),
+        )
+        Box(
+            modifier = Modifier
+                .size(innerSize)
+                .scale(wave2Scale)
+                .clip(CircleShape)
+                .background(CoralBright.copy(alpha = wave2Alpha)),
+        )
+
+        // Core Interactive SOS Button
         Button(
             onClick = onSos,
-            modifier = Modifier.size(innerSize),
+            modifier = Modifier
+                .size(innerSize)
+                .clip(CircleShape)
+                .border(2.dp, CoralBright, CircleShape),
             shape = CircleShape,
-            colors = ButtonDefaults.buttonColors(containerColor = Pink),
-            elevation = ButtonDefaults.buttonElevation(defaultElevation = 10.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = CoralCritical,
+                contentColor = TextPrimary,
+            ),
+            elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp, pressedElevation = 2.dp),
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Filled.Warning, null, tint = TextMain, modifier = Modifier.size(36.dp))
-                Spacer(Modifier.height(8.dp))
-                Text("SOS", color = TextMain, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
-                Spacer(Modifier.height(6.dp))
-                val sosSub = if (com.healthos.BuildConfig.DEBUG) "POST /v1/alerts/sos" else "EMERGENCIA GPS"
-                MonoText(sosSub, color = TextMain, size = 11)
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = TextPrimary,
+                    modifier = Modifier.size(34.dp),
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "SOS",
+                    color = TextPrimary,
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 1.sp,
+                )
+                Spacer(Modifier.height(2.dp))
+                val sosSub = if (com.healthos.BuildConfig.DEBUG) "POST /v1/alerts/sos" else "EMERGENCIA"
+                Text(
+                    text = sosSub,
+                    color = TextPrimary.copy(alpha = 0.9f),
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                )
             }
         }
     }
 }
 
+@Composable
+private fun GpsInfoCard(locationText: String) {
+    HealthCard(
+        containerColor = PanelDeep,
+        borderColor = BorderSubtle,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.LocationOn, null, tint = CoralBright, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Coordenadas GPS Satelitales:", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = locationText,
+            color = TealBright,
+            fontSize = 12.sp,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = "Expedited Critical SyncWorker Outbox Active",
+            color = TextTertiary,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+        )
+    }
+}
+
+// -------------------------------------------------------------
+// BLE DEVICES SCREEN
+// -------------------------------------------------------------
 @Composable
 private fun DevicesScreen(
     modifier: Modifier,
@@ -1171,23 +1618,25 @@ private fun DevicesScreen(
     onConnect: (ScannedBleDevice) -> Unit,
     onUnlink: (String) -> Unit,
 ) {
-    val horizontalPadding = if (sizeInfo.isCompact) 16.dp else 32.dp
+    val horizontalPadding = if (sizeInfo.isCompact) 16.dp else 28.dp
     val context = LocalContext.current
-    val requiredPermissions =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
-        } else {
-            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+    val requiredPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+    } else {
+        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+    }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { granted ->
+        if (granted.values.all { it }) {
+            onScan()
         }
-    val permissionLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
-            if (granted.values.all { it }) {
-                onScan()
-            }
-        }
+    }
 
     fun requestPermissionsAndScan() {
-        val missing = requiredPermissions.filterNot { context.checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED }
+        val missing = requiredPermissions.filterNot {
+            context.checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
         if (missing.isEmpty()) {
             onScan()
         } else {
@@ -1200,113 +1649,139 @@ private fun DevicesScreen(
         contentAlignment = Alignment.TopCenter,
     ) {
         LazyColumn(
-            modifier =
-                Modifier
-                    .widthIn(max = 1000.dp)
-                    .fillMaxWidth()
-                    .padding(horizontal = horizontalPadding),
-            contentPadding = PaddingValues(top = 20.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier
+                .widthIn(max = 1000.dp)
+                .fillMaxWidth()
+                .padding(horizontal = horizontalPadding),
+            contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             item {
-                Text("Dispositivos & BLE", color = TextMain, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+                Text(
+                    text = "Dispositivos & BLE",
+                    color = TextPrimary,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Black,
+                )
             }
             item {
                 AdapterSelector()
             }
             item {
-                DarkCard {
-                    Text("Escáner BLE", color = TextMain, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                HealthCard(
+                    containerColor = PanelSurface,
+                    borderColor = BorderSubtle,
+                ) {
+                    Text(
+                        text = "Escáner BLE Wearable",
+                        color = TextPrimary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                    )
                     Spacer(Modifier.height(10.dp))
+
                     if (bleState == BleState.Scanning) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text("Buscando dispositivos BLE...", color = TealBright, fontSize = 13.sp)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                StatusDot(color = TealBright, isPulsing = true, size = 10.dp)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Buscando dispositivos BLE...", color = TealBright, fontSize = 13.sp)
+                            }
                             Button(
                                 onClick = onStopScan,
-                                colors = ButtonDefaults.buttonColors(containerColor = Pink),
-                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = CoralCritical),
+                                shape = ButtonShape,
+                                modifier = Modifier.height(42.dp),
                             ) {
-                                Text("Detener", fontWeight = FontWeight.Bold)
+                                Text("Detener", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             }
                         }
                     } else {
-                        Button(
+                        HealthButton(
+                            text = "Buscar Dispositivos BLE",
                             onClick = { requestPermissionsAndScan() },
-                            modifier = Modifier.fillMaxWidth().height(48.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Teal),
-                            shape = RoundedCornerShape(10.dp),
-                        ) {
-                            Icon(Icons.Filled.Bluetooth, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Buscar dispositivos BLE", fontWeight = FontWeight.Bold)
-                        }
+                            variant = ButtonVariant.PRIMARY,
+                            icon = Icons.Filled.Bluetooth,
+                        )
                     }
+
                     Spacer(Modifier.height(10.dp))
                     val bleErrorMessage = (bleState as? BleState.Error)?.message
                     if (bleErrorMessage != null) {
-                        Text(bleErrorMessage, color = PinkSoft, fontSize = 13.sp)
+                        Text(bleErrorMessage, color = CoralBright, fontSize = 12.sp)
                         Spacer(Modifier.height(8.dp))
                     }
+
                     if (scannedDevices.isEmpty()) {
                         Text(
-                            "Apunta a tu banda wearable para detectarla. Se muestran dispositivos con servicio de frecuencia cardíaca (0x180D).",
-                            color = TextMuted,
-                            fontSize = 13.sp,
+                            "Apunta a tu banda wearable para detectarla. Detecta dispositivos con servicio de frecuencia cardíaca GATT (0x180D).",
+                            color = TextSecondary,
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp,
                         )
                     } else {
                         scannedDevices.forEach { device ->
                             Row(
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(PanelDeep)
-                                        .border(1.dp, StrokeLine, RoundedCornerShape(10.dp))
-                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(PanelDeep)
+                                    .border(1.dp, BorderSubtle, RoundedCornerShape(12.dp))
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Column(Modifier.weight(1f)) {
-                                    Text(device.name, color = TextMain, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                    MonoText(device.mac, color = TextMuted, size = 12)
+                                    Text(device.name, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    Text(device.mac, color = TextSecondary, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                                 }
-                                TextButton(onClick = { onConnect(device) }) {
-                                    Text("Vincular", color = TealBright, fontWeight = FontWeight.Bold)
-                                }
+                                HealthButton(
+                                    text = "Vincular",
+                                    onClick = { onConnect(device) },
+                                    variant = ButtonVariant.PRIMARY,
+                                    height = 38.dp,
+                                    modifier = Modifier.width(96.dp),
+                                )
                             }
+                            Spacer(Modifier.height(6.dp))
                         }
                     }
                 }
             }
+
             item {
-                Row {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Text(
                         "DISPOSITIVOS VINCULADOS",
-                        color = Blue,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f),
-                        fontSize = 14.sp,
-                    )
-                    Text(
-                        "${devices.size} ${if (devices.size == 1) "DISPOSITIVO" else "DISPOSITIVOS"}",
-                        color = Color(0xFF7183A6),
+                        color = BlueBright,
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp,
                     )
+                    HealthBadge(
+                        "${devices.size} VINCULADOS",
+                        BlueBright,
+                        BlueDeep,
+                        fontSize = 10.sp,
+                    )
                 }
             }
+
             if (devices.isEmpty()) {
                 item {
-                    DarkCard {
-                        Text("Ningún dispositivo vinculado.", color = TextMain, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
-                        Spacer(Modifier.height(8.dp))
+                    HealthCard(containerColor = PanelDeep, borderColor = BorderSubtle) {
+                        Text("Ningún dispositivo vinculado", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Spacer(Modifier.height(4.dp))
                         Text(
-                            "Usa el escáner BLE para detectar y vincular tu banda. Las mediciones se sincronizan automáticamente.",
-                            color = TextMuted,
-                            fontSize = 13.sp,
+                            "Inicia el escáner BLE para conectar tu dispositivo médico.",
+                            color = TextSecondary,
+                            fontSize = 12.sp,
                         )
                     }
                 }
@@ -1317,14 +1792,16 @@ private fun DevicesScreen(
                     }
                 }
             }
+
             item {
-                DarkCard {
-                    Text("Sincronización", color = TextMain, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
-                    Spacer(Modifier.height(10.dp))
+                HealthCard(containerColor = PanelSurface, borderColor = BorderSubtle) {
+                    Text("Sincronización en Segundo Plano", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Spacer(Modifier.height(6.dp))
                     Text(
-                        "Las mediciones del wearable se guardan localmente y se sincronizan con el backend en segundo plano (WorkManager).",
-                        color = TextMuted,
-                        fontSize = 13.sp,
+                        "Las mediciones se capturan automáticamente en SQLite cifrado y se envían periódicamente al backend con WorkManager.",
+                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp,
                     )
                 }
             }
@@ -1337,27 +1814,35 @@ private fun DevicesScreen(
 private fun AdapterSelector() {
     var expanded by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf("XiaomiBandAdapter (Protocolo Propietario)") }
-    DarkCard {
-        Text("Adapter Hardware (`bluetooth`):", color = Blue, fontSize = 14.sp)
-        Spacer(Modifier.height(6.dp))
+
+    HealthCard(containerColor = PanelSurface, borderColor = BorderSubtle) {
+        Text("Adaptador de Hardware (`bluetooth`):", color = BlueBright, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(8.dp))
         ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
             OutlinedTextField(
                 value = selected,
                 onValueChange = {},
                 readOnly = true,
-                modifier = Modifier.menuAnchor().fillMaxWidth(),
+                modifier = Modifier
+                    .menuAnchor()
+                    .fillMaxWidth(),
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                 colors = darkFieldColors(),
-                textStyle = LocalTextStyle.current.copy(color = TextMain, fontSize = 15.sp),
+                textStyle = LocalTextStyle.current.copy(color = TextPrimary, fontSize = 14.sp),
+                shape = ButtonShape,
             )
-            ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                listOf<String>(
+            ExposedDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.background(PanelSurface),
+            ) {
+                listOf(
                     "XiaomiBandAdapter (Protocolo Propietario)",
                     "GenericGattAdapter (BLE Standard)",
                     "GarminAdapter (Protocolo Propietario)",
                 ).forEach {
                     DropdownMenuItem(
-                        text = { Text(it) },
+                        text = { Text(it, color = TextPrimary, fontSize = 13.sp) },
                         onClick = {
                             selected = it
                             expanded = false
@@ -1374,31 +1859,34 @@ private fun DeviceRow(
     device: WearableDevice,
     onUnlink: (String) -> Unit,
 ) {
-    DarkCard {
+    HealthCard(containerColor = PanelSurface, borderColor = BorderSubtle) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
-                modifier =
-                    Modifier
-                        .size(48.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(Teal.copy(alpha = 0.2f)),
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(TealContainer)
+                    .border(1.dp, TealBright.copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Filled.Bluetooth, null, tint = TealBright)
+                Icon(Icons.Filled.Bluetooth, null, tint = TealBright, modifier = Modifier.size(22.dp))
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(device.model, color = TextMain, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
-                MonoText("MAC: ${device.id}", color = TextMuted, size = 12)
+                Text(device.model, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text("MAC: ${device.id}", color = TextSecondary, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
             }
-            Pill("GATT OK", TealBright, Color(0xFF074642))
+            HealthBadge("GATT OK", TealBright, TealContainer, fontSize = 10.sp)
             IconButton(onClick = { onUnlink(device.id) }) {
-                Icon(Icons.Filled.Delete, null, tint = PinkSoft)
+                Icon(Icons.Filled.Delete, null, tint = CoralBright, modifier = Modifier.size(20.dp))
             }
         }
     }
 }
 
+// -------------------------------------------------------------
+// PROFILE & SETTINGS SCREEN
+// -------------------------------------------------------------
 @Composable
 private fun ProfileScreen(
     modifier: Modifier,
@@ -1406,27 +1894,31 @@ private fun ProfileScreen(
     sizeInfo: WindowSizeInfo,
     onLogout: () -> Unit,
 ) {
-    val horizontalPadding = if (sizeInfo.isCompact) 16.dp else 32.dp
+    val horizontalPadding = if (sizeInfo.isCompact) 16.dp else 28.dp
 
     Box(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.TopCenter,
     ) {
         LazyColumn(
-            modifier =
-                Modifier
-                    .widthIn(max = 800.dp)
-                    .fillMaxWidth()
-                    .padding(horizontal = horizontalPadding),
-            contentPadding = PaddingValues(top = 20.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier
+                .widthIn(max = 800.dp)
+                .fillMaxWidth()
+                .padding(horizontal = horizontalPadding),
+            contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             item {
-                Text("Perfil y Configuración", color = TextMain, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+                Text(
+                    text = "Perfil y Seguridad",
+                    color = TextPrimary,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Black,
+                )
             }
             item {
-                DarkCard {
-                    Text("PERFIL CLÍNICO", color = TextMain, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                HealthCard(containerColor = PanelSurface, borderColor = BorderSubtle) {
+                    Text("PERFIL CLÍNICO DEL PACIENTE", color = TextPrimary, fontWeight = FontWeight.Black, fontSize = 14.sp, letterSpacing = 0.5.sp)
                     Spacer(Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         ProfileMetric("Peso", healthProfile?.let { "${it.weightKg} kg" } ?: "—", Modifier.weight(1f))
@@ -1436,24 +1928,21 @@ private fun ProfileScreen(
                 }
             }
             item {
-                DarkCard {
-                    Text("Seguridad Android", color = TextMain, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                HealthCard(containerColor = PanelSurface, borderColor = BorderSubtle) {
+                    Text("Seguridad y Privacidad", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Spacer(Modifier.height(12.dp))
-                    SecurityRow("Base de datos", "SQLCipher Encrypted")
-                    SecurityRow("Tokens JWT", "EncryptedSharedPref")
+                    SecurityRow("Base de Datos Local", "SQLCipher AES-256")
+                    SecurityRow("Cifrado de Tokens", "EncryptedSharedPreferences")
+                    SecurityRow("Comunicaciones", "TLS 1.3 / HTTPS")
                 }
             }
             item {
-                Button(
+                HealthButton(
+                    text = "Cerrar Sesión",
                     onClick = onLogout,
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF260719), contentColor = PinkSoft),
-                    shape = RoundedCornerShape(14.dp),
-                ) {
-                    Icon(Icons.Filled.Person, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Cerrar Sesión", fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
-                }
+                    variant = ButtonVariant.DANGER,
+                    icon = Icons.Filled.Person,
+                )
             }
         }
     }
@@ -1466,17 +1955,17 @@ private fun ProfileMetric(
     modifier: Modifier,
 ) {
     Column(
-        modifier =
-            modifier
-                .height(68.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(PanelDeep)
-                .border(1.dp, StrokeLine, RoundedCornerShape(12.dp)),
+        modifier = modifier
+            .height(72.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(PanelDeep)
+            .border(1.dp, BorderSubtle, RoundedCornerShape(12.dp)),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(label, color = Blue, fontSize = 12.sp)
-        Text(value, color = TextMain, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
+        Text(label, color = BlueBright, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+        Spacer(Modifier.height(2.dp))
+        Text(value, color = TextPrimary, fontWeight = FontWeight.Black, fontSize = 18.sp)
     }
 }
 
@@ -1486,90 +1975,25 @@ private fun SecurityRow(
     value: String,
 ) {
     Row(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .padding(vertical = 6.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, color = Blue, fontSize = 14.sp)
-        MonoText(value, color = TealBright, size = 14)
+        Text(label, color = TextSecondary, fontSize = 13.sp)
+        Text(value, color = TealBright, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium)
     }
 }
 
 @Composable
-private fun DarkCard(
-    modifier: Modifier = Modifier,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Column(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(18.dp))
-                .background(Panel)
-                .border(1.dp, StrokeLine, RoundedCornerShape(18.dp))
-                .padding(16.dp),
-        content = content,
-    )
-}
-
-@Composable
-private fun Pill(
-    text: String,
-    color: Color,
-    background: Color,
-) {
-    Text(
-        text = text,
-        color = color,
-        fontSize = 11.sp,
-        fontWeight = FontWeight.Bold,
-        modifier =
-            Modifier
-                .clip(RoundedCornerShape(6.dp))
-                .background(background)
-                .padding(horizontal = 8.dp, vertical = 5.dp),
-    )
-}
-
-@Composable
-private fun OutlinePillButton(
-    text: String,
-    onClick: () -> Unit,
-) {
-    Text(
-        text = text,
-        color = TextMain,
-        fontSize = 13.sp,
-        modifier =
-            Modifier
-                .clip(RoundedCornerShape(10.dp))
-                .background(Color(0xFF253249))
-                .border(1.dp, Color(0xFF566783), RoundedCornerShape(10.dp))
-                .clickable(onClick = onClick)
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-    )
-}
-
-@Composable
-private fun MonoText(
-    text: String,
-    color: Color,
-    size: Int,
-) {
-    Text(text = text, color = color, fontSize = size.sp, fontFamily = FontFamily.Monospace)
-}
-
-@Composable
-private fun darkFieldColors() =
-    OutlinedTextFieldDefaults.colors(
-        focusedTextColor = TextMain,
-        unfocusedTextColor = TextMain,
-        focusedContainerColor = PanelDeep,
-        unfocusedContainerColor = PanelDeep,
-        focusedBorderColor = StrokeLine,
-        unfocusedBorderColor = StrokeLine,
-        focusedTrailingIconColor = TextMain,
-        unfocusedTrailingIconColor = TextMain,
-    )
+private fun darkFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedTextColor = TextPrimary,
+    unfocusedTextColor = TextPrimary,
+    focusedContainerColor = PanelDeep,
+    unfocusedContainerColor = PanelDeep,
+    focusedBorderColor = TealBright,
+    unfocusedBorderColor = BorderSubtle,
+    focusedTrailingIconColor = TextPrimary,
+    unfocusedTrailingIconColor = TextSecondary,
+)

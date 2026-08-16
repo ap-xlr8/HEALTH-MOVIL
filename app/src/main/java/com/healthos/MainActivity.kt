@@ -9,8 +9,10 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.FragmentActivity
 import com.healthos.presentation.HealthOsApp
-import com.healthos.presentation.biometric.BiometricGate
 import dagger.hilt.android.AndroidEntryPoint
+
+import com.healthos.presentation.theme.HealthOsTheme
+import com.healthos.presentation.theme.MidnightInk
 
 @AndroidEntryPoint
 class MainActivity : FragmentActivity() {
@@ -26,11 +28,9 @@ class MainActivity : FragmentActivity() {
         WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = false
         WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightNavigationBars = false
         setContent {
-            MaterialTheme {
-                Surface {
-                    BiometricGate {
-                        HealthOsApp()
-                    }
+            HealthOsTheme {
+                Surface(color = MidnightInk) {
+                    HealthOsApp()
                 }
             }
         }
