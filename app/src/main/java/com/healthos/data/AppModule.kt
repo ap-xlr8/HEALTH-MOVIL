@@ -61,8 +61,7 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideAuthApiService(networkFactory: NetworkFactory): AuthApiService =
-        networkFactory.retrofit().create(AuthApiService::class.java)
+    fun provideAuthApiService(networkFactory: NetworkFactory): AuthApiService = networkFactory.retrofit().create(AuthApiService::class.java)
 
     @Provides
     @Singleton

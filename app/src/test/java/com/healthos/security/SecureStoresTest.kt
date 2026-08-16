@@ -1,6 +1,5 @@
 package com.healthos.security
 
-import com.healthos.domain.model.Role
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -10,15 +9,25 @@ import java.security.SecureRandom
 class InMemoryTokenStore : SecureTokenStore() {
     private var tokenMap = mutableMapOf<String, String>()
 
-    override fun save(accessToken: String, refreshToken: String, role: String) {
+    override fun save(
+        accessToken: String,
+        refreshToken: String,
+        role: String,
+        userId: String?,
+    ) {
         tokenMap["access_token"] = accessToken
         tokenMap["refresh_token"] = refreshToken
         tokenMap["role"] = role
+        if (userId != null) tokenMap["user_id"] = userId
     }
 
     override fun accessToken(): String? = tokenMap["access_token"]
+
     override fun refreshToken(): String? = tokenMap["refresh_token"]
+
     override fun role(): String? = tokenMap["role"]
+
+    override fun userId(): String? = tokenMap["user_id"]
 
     override fun clear() {
         tokenMap.clear()
@@ -26,7 +35,6 @@ class InMemoryTokenStore : SecureTokenStore() {
 }
 
 class SecureStoresTest {
-
     @Test
     fun testTokenStoreSaveAndRetrieve() {
         val store = InMemoryTokenStore()

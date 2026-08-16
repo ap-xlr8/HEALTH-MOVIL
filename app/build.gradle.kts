@@ -20,14 +20,26 @@ android {
 
         testInstrumentationRunner = "com.healthos.HiltTestRunner"
 
-        buildConfigField("String", "API_BASE_URL_DEV", quoted(prop("API_BASE_URL_DEV", "http://localhost:8080")))
-        buildConfigField("String", "API_BASE_URL_STAGING", quoted(prop("API_BASE_URL_STAGING", "https://health-apis.onrender.com")))
-        buildConfigField("String", "API_BASE_URL_PROD", quoted(prop("API_BASE_URL_PROD", "https://health-apis.onrender.com")))
+        buildConfigField("String", "API_BASE_URL_DEV", quoted(prop("API_BASE_URL_DEV", "http://10.0.2.2:8080")))
+        buildConfigField("String", "API_BASE_URL_STAGING", quoted(prop("API_BASE_URL_STAGING", "https://staging.api.healthos.app")))
+        buildConfigField("String", "API_BASE_URL_PROD", quoted(prop("API_BASE_URL_PROD", "https://api.healthos.app")))
         buildConfigField("String", "SENTRY_DSN", quoted(prop("SENTRY_DSN", "")))
 
         javaCompileOptions {
             annotationProcessorOptions {
                 argument("room.schemaLocation", "$projectDir/schemas")
+            }
+        }
+    }
+
+    signingConfigs {
+        create("release") {
+            val keystorePath = System.getenv("KEYSTORE_FILE") ?: prop("KEYSTORE_FILE", "")
+            if (keystorePath.isNotBlank() && file(keystorePath).exists()) {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("KEYSTORE_PASSWORD") ?: prop("KEYSTORE_PASSWORD", "")
+                keyAlias = System.getenv("KEY_ALIAS") ?: prop("KEY_ALIAS", "")
+                keyPassword = System.getenv("KEY_PASSWORD") ?: prop("KEY_PASSWORD", "")
             }
         }
     }
@@ -45,6 +57,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            val releaseSigning = signingConfigs.getByName("release")
+            if (releaseSigning.storeFile != null && releaseSigning.storeFile!!.exists()) {
+                signingConfig = releaseSigning
+            }
         }
     }
 
@@ -147,7 +163,7 @@ kapt {
 }
 
 detekt {
-    config.setFrom(files("$rootDir/detekt.yml"))
+    config.setFrom(files("detekt.yml"))
     source.setFrom(
         files(
             "src/main/java",

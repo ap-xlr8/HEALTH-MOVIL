@@ -13,7 +13,9 @@ open class SecureTokenStore {
     private var prefs: android.content.SharedPreferences? = null
 
     @Inject
-    constructor(@ApplicationContext context: Context) {
+    constructor(
+        @ApplicationContext context: Context,
+    ) {
         prefs =
             EncryptedSharedPreferences.create(
                 context,

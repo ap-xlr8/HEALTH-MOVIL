@@ -226,26 +226,20 @@ class PatientRepositoryImpl
             }
         }
 
-        private fun currentPatientId(): String =
-            secureTokenStore.userId() ?: "usr_current_patient"
+        private fun currentPatientId(): String = secureTokenStore.userId().orEmpty()
 
-        override fun latestMeasurements(): Flow<List<Measurement>> =
-            dao.latestMeasurements().map { list -> list.map { it.toDomain() } }
+        override fun latestMeasurements(): Flow<List<Measurement>> = dao.latestMeasurements().map { list -> list.map { it.toDomain() } }
 
-        override fun medications(): Flow<List<Medication>> =
-            dao.medications().map { list -> list.map { it.toDomain() } }
+        override fun medications(): Flow<List<Medication>> = dao.medications().map { list -> list.map { it.toDomain() } }
 
-        override fun activeAlerts(): Flow<List<Alert>> =
-            dao.alerts().map { list -> list.map { it.toDomain() } }
+        override fun activeAlerts(): Flow<List<Alert>> = dao.alerts().map { list -> list.map { it.toDomain() } }
 
-        override fun devices(): Flow<List<WearableDevice>> =
-            dao.devices().map { list -> list.map { it.toDomain() } }
+        override fun devices(): Flow<List<WearableDevice>> = dao.devices().map { list -> list.map { it.toDomain() } }
 
         override suspend fun measurements(
             metric: String,
             days: Int,
-        ): List<Measurement> =
-            dao.measurements(metric, days * 24).map { it.toDomain() }
+        ): List<Measurement> = dao.measurements(metric, days * 24).map { it.toDomain() }
 
         override suspend fun markMedicationTaken(id: String) {
             dao.markMedicationTaken(id)
@@ -318,16 +312,10 @@ class PatientRepositoryImpl
 
         override suspend fun runPreventiveAnalysis(): MlRiskResult {
             val localEntities = dao.measurements("HEART_RATE", 10)
-            val domainList =
-                if (localEntities.isNotEmpty()) {
-                    localEntities.map { it.toDomain() }
-                } else {
-                    listOf(
-                        Measurement("M1", MetricType.HEART_RATE, 74.0, "bpm", java.time.Instant.now().toString(), SyncStatus.SYNCED),
-                        Measurement("M2", MetricType.SPO2, 98.0, "%", java.time.Instant.now().toString(), SyncStatus.SYNCED),
-                    )
-                }
-            return riskEngine.analyze(domainList)
+            if (localEntities.isEmpty()) {
+                return MlRiskResult(0.0f, "Sin mediciones")
+            }
+            return riskEngine.analyze(localEntities.map { it.toDomain() })
         }
 
         private suspend fun fetchRemoteMeasurements() {
@@ -336,7 +324,12 @@ class PatientRepositoryImpl
                 val data = response.body()?.data
                 if (response.isSuccessful && data != null) {
                     data.forEach { dto ->
-                        val type = runCatching { MetricType.valueOf(dto.metricType ?: dto.type?.uppercase() ?: "HEART_RATE") }.getOrDefault(MetricType.HEART_RATE)
+                        val type =
+                            runCatching {
+                                MetricType.valueOf(
+                                    dto.metricType ?: dto.type?.uppercase() ?: "HEART_RATE",
+                                )
+                            }.getOrDefault(MetricType.HEART_RATE)
                         dao.upsertMeasurement(
                             Measurement(dto.id, type, dto.value, dto.unit, dto.timestamp, SyncStatus.SYNCED).toEntity(),
                         )
@@ -369,7 +362,12 @@ class PatientRepositoryImpl
                 val data = response.body()?.data
                 if (response.isSuccessful && data != null) {
                     data.forEach { dto ->
-                        val protocol = runCatching { DeviceProtocol.valueOf(dto.protocol ?: "GATT_STANDARD") }.getOrDefault(DeviceProtocol.GATT_STANDARD)
+                        val protocol =
+                            runCatching {
+                                DeviceProtocol.valueOf(
+                                    dto.protocol ?: "GATT_STANDARD",
+                                )
+                            }.getOrDefault(DeviceProtocol.GATT_STANDARD)
                         dao.upsertDevice(
                             WearableDevice(
                                 id = dto.serialNumber ?: dto.deviceId ?: dto.id ?: "SN-001",
@@ -432,7 +430,9 @@ class CaregiverRepositoryImpl
                                     remoteList.add(PatientSummary(profile.id, name, AlertStatus.NORMAL, null))
                                 }
                             } catch (_: Exception) {
-                                remoteList.add(PatientSummary(rel.patientId, "Paciente ${rel.patientId.takeLast(6)}", AlertStatus.NORMAL, null))
+                                remoteList.add(
+                                    PatientSummary(rel.patientId, "Paciente ${rel.patientId.takeLast(6)}", AlertStatus.NORMAL, null),
+                                )
                             }
                         }
                         if (remoteList.isNotEmpty()) {
@@ -454,7 +454,9 @@ private fun extractUserIdFromJwt(token: String): String? {
             val json = String(payloadBytes, Charsets.UTF_8)
             val regex = Regex("\"(uid|sub|user_id)\"\\s*:\\s*\"([^\"]+)\"")
             regex.find(json)?.groupValues?.get(2)
-        } else null
+        } else {
+            null
+        }
     } catch (_: Exception) {
         null
     }
@@ -469,7 +471,9 @@ private fun extractRoleFromJwt(token: String): Role {
             val regex = Regex("\"role\"\\s*:\\s*\"([^\"]+)\"")
             val roleStr = regex.find(json)?.groupValues?.get(1) ?: "patient"
             if (roleStr.equals("caregiver", ignoreCase = true)) Role.CAREGIVER else Role.PATIENT
-        } else Role.PATIENT
+        } else {
+            Role.PATIENT
+        }
     } catch (_: Exception) {
         Role.PATIENT
     }

@@ -224,36 +224,54 @@ data class RelationshipDto(
 
 interface AuthApiService {
     @POST("v1/auth/register")
-    suspend fun register(@Body request: RegisterRequestDto): Response<ApiResponse<RegisterResponseDataDto>>
+    suspend fun register(
+        @Body request: RegisterRequestDto,
+    ): Response<ApiResponse<RegisterResponseDataDto>>
 
     @POST("v1/auth/login")
-    suspend fun login(@Body request: LoginRequestDto): Response<LoginResponseDto>
+    suspend fun login(
+        @Body request: LoginRequestDto,
+    ): Response<LoginResponseDto>
 
     @POST("v1/auth/refresh")
-    suspend fun refresh(@Body request: RefreshTokenRequestDto): Response<LoginResponseDto>
+    suspend fun refresh(
+        @Body request: RefreshTokenRequestDto,
+    ): Response<LoginResponseDto>
 
     @POST("v1/auth/verify-email")
-    suspend fun verifyEmail(@Body request: VerifyEmailTokenDto): Response<ApiResponse<VerifyEmailResponseDataDto>>
+    suspend fun verifyEmail(
+        @Body request: VerifyEmailTokenDto,
+    ): Response<ApiResponse<VerifyEmailResponseDataDto>>
 
     @POST("v1/auth/2fa/verify")
-    suspend fun verify2FA(@Body request: TwoFactorVerifyRequestDto): Response<LoginResponseDto>
+    suspend fun verify2FA(
+        @Body request: TwoFactorVerifyRequestDto,
+    ): Response<LoginResponseDto>
 
     @POST("v1/auth/2fa/resend")
-    suspend fun resend2FA(@Body request: TwoFactorResendRequestDto): Response<ApiResponse<Map<String, Any>>>
+    suspend fun resend2FA(
+        @Body request: TwoFactorResendRequestDto,
+    ): Response<ApiResponse<Map<String, Any>>>
 
     @POST("v1/auth/logout")
     suspend fun logout(): Response<Map<String, String>>
 
     @POST("v1/auth/forgot-password")
-    suspend fun forgotPassword(@Body request: ForgotPasswordRequestDto): Response<ApiResponse<Map<String, Any>>>
+    suspend fun forgotPassword(
+        @Body request: ForgotPasswordRequestDto,
+    ): Response<ApiResponse<Map<String, Any>>>
 
     @PUT("v1/patients/me/health-profile")
-    suspend fun saveHealthProfile(@Body request: HealthProfileRequestDto): Response<ApiResponse<Map<String, Any>>>
+    suspend fun saveHealthProfile(
+        @Body request: HealthProfileRequestDto,
+    ): Response<ApiResponse<Map<String, Any>>>
 }
 
 interface PatientApiService {
     @POST("v1/sync/measurements")
-    suspend fun syncMeasurements(@Body request: SyncMeasurementsRequestDto): Response<SyncMeasurementsResponseDto>
+    suspend fun syncMeasurements(
+        @Body request: SyncMeasurementsRequestDto,
+    ): Response<SyncMeasurementsResponseDto>
 
     @GET("v1/patients/{id}/measurements")
     suspend fun getMeasurements(
@@ -265,10 +283,14 @@ interface PatientApiService {
     ): Response<ApiResponse<List<MeasurementDto>>>
 
     @GET("v1/patients/{id}")
-    suspend fun getPatient(@Path("id") patientId: String): Response<PatientProfileDto>
+    suspend fun getPatient(
+        @Path("id") patientId: String,
+    ): Response<PatientProfileDto>
 
     @GET("v1/patients/{id}/medications")
-    suspend fun getMedications(@Path("id") patientId: String): Response<ApiResponse<List<MedicationDto>>>
+    suspend fun getMedications(
+        @Path("id") patientId: String,
+    ): Response<ApiResponse<List<MedicationDto>>>
 
     @POST("v1/patients/{id}/medications")
     suspend fun addMedication(
@@ -283,16 +305,22 @@ interface PatientApiService {
     ): Response<ApiResponse<Map<String, Any>>>
 
     @GET("v1/alerts/{id}")
-    suspend fun getAlertDetail(@Path("id") alertId: String): Response<AlertDto>
+    suspend fun getAlertDetail(
+        @Path("id") alertId: String,
+    ): Response<AlertDto>
 
     @POST("v1/alerts/{id}/acknowledge")
-    suspend fun acknowledgeAlert(@Path("id") alertId: String): Response<AlertDto>
+    suspend fun acknowledgeAlert(
+        @Path("id") alertId: String,
+    ): Response<AlertDto>
 
     @GET("v1/devices")
     suspend fun getDevices(): Response<ApiResponse<List<DeviceDto>>>
 
     @POST("v1/devices")
-    suspend fun registerDevice(@Body request: DeviceDto): Response<ApiResponse<DeviceDto>>
+    suspend fun registerDevice(
+        @Body request: DeviceDto,
+    ): Response<ApiResponse<DeviceDto>>
 }
 
 interface CaregiverApiService {
@@ -300,5 +328,7 @@ interface CaregiverApiService {
     suspend fun getRelationships(): Response<ApiResponse<List<RelationshipDto>>>
 
     @GET("v1/patients/{id}")
-    suspend fun getPatientProfile(@Path("id") patientId: String): Response<PatientProfileDto>
+    suspend fun getPatientProfile(
+        @Path("id") patientId: String,
+    ): Response<PatientProfileDto>
 }

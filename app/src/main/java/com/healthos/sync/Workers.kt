@@ -25,23 +25,26 @@ class NormalSyncWorker
             return try {
                 val list = dao.getPendingMeasurements(50)
                 if (list.isNotEmpty()) {
-                    val dtos = list.map {
-                        val (backendType, backendUnit) = when (it.metricType) {
-                            MetricType.SPO2 -> "blood_oxygen" to "%"
-                            MetricType.HEART_RATE -> "heart_rate" to "bpm"
-                            else -> "heart_rate" to "bpm"
+                    val dtos =
+                        list.map {
+                            val (backendType, backendUnit) =
+                                when (it.metricType) {
+                                    MetricType.SPO2 -> "blood_oxygen" to "%"
+                                    MetricType.HEART_RATE -> "heart_rate" to "bpm"
+                                    else -> "heart_rate" to "bpm"
+                                }
+                            SyncMeasurementItemDto(
+                                type = backendType,
+                                value = it.value,
+                                unit = backendUnit,
+                                timestamp = it.timestamp,
+                            )
                         }
-                        SyncMeasurementItemDto(
-                            type = backendType,
-                            value = it.value,
-                            unit = backendUnit,
-                            timestamp = it.timestamp,
+                    val request =
+                        SyncMeasurementsRequestDto(
+                            deviceId = "MOBILE_OUTBOX",
+                            data = dtos,
                         )
-                    }
-                    val request = SyncMeasurementsRequestDto(
-                        deviceId = "MOBILE_OUTBOX",
-                        data = dtos,
-                    )
                     val response = patientApi.syncMeasurements(request)
                     if (response.isSuccessful) {
                         dao.updateSyncStatus(list.map { it.id }, com.healthos.domain.model.SyncStatus.SYNCED)
@@ -69,17 +72,19 @@ class CriticalSyncWorker
             return try {
                 val nowStr = java.time.Instant.now().toString()
                 val latestHr = dao.measurements("HEART_RATE", 1).firstOrNull()?.value ?: 80.0
-                val request = SyncMeasurementsRequestDto(
-                    deviceId = "CRITICAL_EVENT_$eventId",
-                    data = listOf(
-                        SyncMeasurementItemDto(
-                            type = "heart_rate",
-                            value = latestHr,
-                            unit = "bpm",
-                            timestamp = nowStr,
-                        ),
-                    ),
-                )
+                val request =
+                    SyncMeasurementsRequestDto(
+                        deviceId = "CRITICAL_EVENT_$eventId",
+                        data =
+                            listOf(
+                                SyncMeasurementItemDto(
+                                    type = "heart_rate",
+                                    value = latestHr,
+                                    unit = "bpm",
+                                    timestamp = nowStr,
+                                ),
+                            ),
+                    )
                 patientApi.syncMeasurements(request)
                 Result.success()
             } catch (_: Exception) {

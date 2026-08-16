@@ -19,7 +19,9 @@ class PreventiveRiskEngine {
     private var tfliteInterpreter: Interpreter? = null
 
     @Inject
-    constructor(@ApplicationContext context: Context) {
+    constructor(
+        @ApplicationContext context: Context,
+    ) {
         this.context = context
         try {
             val modelBuffer = loadModelFile(context, "models/heart_rate_anomaly.tflite")

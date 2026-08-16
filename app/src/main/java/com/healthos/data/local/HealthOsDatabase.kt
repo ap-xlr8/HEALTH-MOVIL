@@ -38,7 +38,10 @@ interface HealthOsDao {
     suspend fun getPendingMeasurements(limit: Int): List<MeasurementEntity>
 
     @Query("UPDATE measurements SET syncStatus = :status WHERE id IN (:ids)")
-    suspend fun updateSyncStatus(ids: List<String>, status: com.healthos.domain.model.SyncStatus)
+    suspend fun updateSyncStatus(
+        ids: List<String>,
+        status: com.healthos.domain.model.SyncStatus,
+    )
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertMeasurement(entity: MeasurementEntity)

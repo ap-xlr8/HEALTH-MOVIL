@@ -43,7 +43,10 @@ class PatientViewModel
         private val _actionState = MutableStateFlow(PatientActionState())
         val actionState: StateFlow<PatientActionState> = _actionState
 
-        fun triggerSos(lat: Double = 19.4326, lng: Double = -99.1332) {
+        fun triggerSos(
+            lat: Double = 19.4326,
+            lng: Double = -99.1332,
+        ) {
             viewModelScope.launch {
                 val alert = patientRepository.triggerSos(com.healthos.domain.model.SosLocation(lat, lng))
                 _actionState.value = PatientActionState(message = alert.title)

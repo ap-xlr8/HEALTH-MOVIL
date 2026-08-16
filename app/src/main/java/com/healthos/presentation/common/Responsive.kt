@@ -40,9 +40,7 @@ data class WindowSizeInfo(
 }
 
 @Composable
-fun ProvideWindowSizeInfo(
-    content: @Composable (WindowSizeInfo) -> Unit,
-) {
+fun ProvideWindowSizeInfo(content: @Composable (WindowSizeInfo) -> Unit) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val sizeInfo = calculateWindowSizeInfo(maxWidth, maxHeight)
         content(sizeInfo)

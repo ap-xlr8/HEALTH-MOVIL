@@ -52,7 +52,6 @@ import com.healthos.domain.model.PatientSummary
 import com.healthos.presentation.HealthScaffold
 import com.healthos.presentation.InfoCard
 import com.healthos.presentation.common.ProvideWindowSizeInfo
-import com.healthos.presentation.common.WindowSizeInfo
 
 private val Panel = Color(0xFF121B2D)
 private val PanelDeep = Color(0xFF050A18)
@@ -79,7 +78,9 @@ fun CaregiverHome(
     ProvideWindowSizeInfo { sizeInfo ->
         if (sizeInfo.isLandscape || !sizeInfo.isCompact) {
             // Split View / Master-Detail layout for wide screens and landscape
-            HealthScaffold("Cuidador • Monitor", listOf("Dashboard", "Cuenta"), selectedTab.coerceAtMost(1), { selectedTab = it }, onLogout, modifier) { contentModifier ->
+            HealthScaffold("Cuidador • Monitor", listOf("Dashboard", "Cuenta"), selectedTab.coerceAtMost(1), {
+                selectedTab = it
+            }, onLogout, modifier) { contentModifier ->
                 if (selectedTab == 0) {
                     CaregiverSplitView(
                         modifier = contentModifier,
@@ -216,7 +217,14 @@ private fun PatientCard(
     onClick: () -> Unit,
 ) {
     val isAlert = patient.status != AlertStatus.NORMAL
-    val borderColor = if (isSelected) TealBright else if (isAlert) PinkSoft else StrokeLine
+    val borderColor =
+        if (isSelected) {
+            TealBright
+        } else if (isAlert) {
+            PinkSoft
+        } else {
+            StrokeLine
+        }
 
     Card(
         modifier =

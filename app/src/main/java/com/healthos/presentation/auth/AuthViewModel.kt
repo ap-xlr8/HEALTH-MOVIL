@@ -54,11 +54,10 @@ class AuthViewModel
             authRepository.verify2FA(email, code)
         }
 
-        fun resend2FA(
-            email: String,
-        ) = run {
-            authRepository.resend2FA(email)
-        }
+        fun resend2FA(email: String) =
+            run {
+                authRepository.resend2FA(email)
+            }
 
         fun forgotPassword(email: String) =
             run {

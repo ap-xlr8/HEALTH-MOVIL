@@ -6,7 +6,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -95,7 +94,6 @@ import com.healthos.domain.model.MetricType
 import com.healthos.domain.model.WearableDevice
 import com.healthos.presentation.common.ProvideWindowSizeInfo
 import com.healthos.presentation.common.WindowSizeInfo
-import kotlin.math.min
 import kotlin.math.roundToInt
 
 private val Ink = Color(0xFF020717)
@@ -219,7 +217,14 @@ private fun PatientShell(
                             Icon(
                                 tab.icon,
                                 contentDescription = tab.label,
-                                tint = if (isSos) PinkSoft else if (isSelected) TealBright else TextMuted,
+                                tint =
+                                    if (isSos) {
+                                        PinkSoft
+                                    } else if (isSelected) {
+                                        TealBright
+                                    } else {
+                                        TextMuted
+                                    },
                             )
                         },
                         label = {
@@ -391,7 +396,7 @@ private fun DashboardScreen(
                     Column {
                         Text("Bienvenido de nuevo", color = Blue, fontSize = 15.sp)
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Carlos Lopez", color = TextMain, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
+                            Text("Paciente", color = TextMain, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
                             Spacer(Modifier.width(8.dp))
                             Box(Modifier.size(10.dp).clip(CircleShape).background(TealBright))
                         }
@@ -646,7 +651,13 @@ private fun MedicationCard(
                 fontSize = 16.sp,
                 modifier = Modifier.weight(1f),
             )
-            Text("$taken de ${meds.size}\ntomados", color = TextMain, fontWeight = FontWeight.Bold, fontSize = 12.sp, textAlign = TextAlign.Center)
+            Text(
+                "$taken de ${meds.size}\ntomados",
+                color = TextMain,
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center,
+            )
         }
         Spacer(Modifier.height(12.dp))
         meds.forEach { medication ->
@@ -712,7 +723,11 @@ private fun AlertsCompactCard(alerts: List<Alert>) {
         } else {
             alerts.forEach {
                 Text(it.title, color = TextMain, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Text("${it.status.name} - ${it.timestamp}", color = if (it.status.name == "CRITICAL") PinkSoft else Yellow, fontSize = 12.sp)
+                Text(
+                    "${it.status.name} - ${it.timestamp}",
+                    color = if (it.status.name == "CRITICAL") PinkSoft else Yellow,
+                    fontSize = 12.sp,
+                )
             }
         }
     }
@@ -820,7 +835,12 @@ private fun MetricsScreen(
                                 DarkCard(Modifier.weight(1f)) {
                                     Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                                         Text(measurement.metricType.name, color = TextMain, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                        Text("${measurement.value} ${measurement.unit}", color = TealBright, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                        Text(
+                                            "${measurement.value} ${measurement.unit}",
+                                            color = TealBright,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
+                                        )
                                     }
                                 }
                             }
@@ -1113,8 +1133,19 @@ private fun DevicesScreen(
             }
             item {
                 Row {
-                    Text("VINCULADOS (GET /V1/DEVICES)", color = Blue, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), fontSize = 14.sp)
-                    Text("${devices.size.coerceAtLeast(1)} DISPOSITIVO", color = Color(0xFF7183A6), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text(
+                        "VINCULADOS (GET /V1/DEVICES)",
+                        color = Blue,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f),
+                        fontSize = 14.sp,
+                    )
+                    Text(
+                        "${devices.size.coerceAtLeast(1)} DISPOSITIVO",
+                        color = Color(0xFF7183A6),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                    )
                 }
             }
             itemsWithFallback(devices).forEach { device ->

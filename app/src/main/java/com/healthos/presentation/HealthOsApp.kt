@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -160,32 +159,35 @@ private fun AuthFlow(
                     Spacer(Modifier.height(24.dp))
                     when (step) {
                         0 -> WelcomeScreen(onLogin = { step = 1 }, onRegister = { step = 2 })
-                        1 -> LoginScreen(
-                            loading = loading,
-                            onLogin = { email, pass ->
-                                currentEmail = email
-                                onLogin(email, pass)
-                                step = 3
-                            },
-                            onForgot = { step = 4 },
-                            onBack = { step = 0 },
-                        )
-                        2 -> RegisterScreen(
-                            loading = loading,
-                            onRegister = { email, pass, role, first, last ->
-                                currentEmail = email
-                                onRegister(email, pass, role, first, last)
-                                step = 3
-                            },
-                            onBack = { step = 0 },
-                        )
-                        3 -> TwoFactorVerifyScreen(
-                            loading = loading,
-                            email = currentEmail,
-                            onVerify = onVerify2FA,
-                            onResend = onResend2FA,
-                            onBack = { step = 0 },
-                        )
+                        1 ->
+                            LoginScreen(
+                                loading = loading,
+                                onLogin = { email, pass ->
+                                    currentEmail = email
+                                    onLogin(email, pass)
+                                    step = 3
+                                },
+                                onForgot = { step = 4 },
+                                onBack = { step = 0 },
+                            )
+                        2 ->
+                            RegisterScreen(
+                                loading = loading,
+                                onRegister = { email, pass, role, first, last ->
+                                    currentEmail = email
+                                    onRegister(email, pass, role, first, last)
+                                    step = 3
+                                },
+                                onBack = { step = 0 },
+                            )
+                        3 ->
+                            TwoFactorVerifyScreen(
+                                loading = loading,
+                                email = currentEmail,
+                                onVerify = onVerify2FA,
+                                onResend = onResend2FA,
+                                onBack = { step = 0 },
+                            )
                         4 -> ForgotPasswordScreen(loading, onForgot, onBack = { step = 1 })
                         5 -> OnboardingScreen(loading, onOnboarding)
                     }
@@ -302,7 +304,7 @@ private fun TwoFactorVerifyScreen(
 ) {
     var userEmail by remember { mutableStateOf(email) }
     var code by remember { mutableStateOf("") }
-    
+
     Text(
         text = "Verificación 2FA (OTP)",
         color = AccentTeal,
@@ -317,7 +319,7 @@ private fun TwoFactorVerifyScreen(
     )
     Spacer(Modifier.height(8.dp))
     Field("Email registrado", userEmail) { userEmail = it }
-    Field("Código de 6 dígitos", code) { 
+    Field("Código de 6 dígitos", code) {
         if (it.length <= 6) code = it.filter { c -> c.isDigit() }
     }
     Spacer(Modifier.height(8.dp))
@@ -432,7 +434,14 @@ fun ActionButton(
         colors = ButtonDefaults.buttonColors(containerColor = AccentTeal),
         shape = RoundedCornerShape(12.dp),
     ) {
-        if (loading) CircularProgressIndicator(modifier = Modifier.size(24.dp), color = TextMain) else Text(text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        if (loading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(24.dp),
+                color = TextMain,
+            )
+        } else {
+            Text(text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        }
     }
 }
 
@@ -478,7 +487,13 @@ fun HealthScaffold(
                             selected = selected == index,
                             onClick = { onSelect(index) },
                             icon = {},
-                            label = { Text(tab, fontSize = 12.sp, fontWeight = if (selected == index) FontWeight.Bold else FontWeight.Normal) },
+                            label = {
+                                Text(
+                                    tab,
+                                    fontSize = 12.sp,
+                                    fontWeight = if (selected == index) FontWeight.Bold else FontWeight.Normal,
+                                )
+                            },
                         )
                     }
                     Spacer(Modifier.weight(1f))

@@ -2,10 +2,22 @@
 .gradle-local/
 .kotlin/
 build/
-local.properties
+app/build/
 *.iml
 .idea/
-app/build/
 captures/
 .copy-target.txt
 window.xml
+
+# Secrets, Environment & Keystores
+local.properties
+keystore.properties
+*.jks
+*.keystore
+*.p12
+*.pepk
+*.env
+.env.*
+google-services.json
+sentry.properties
+
