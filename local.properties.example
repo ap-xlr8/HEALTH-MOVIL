@@ -1,4 +1,4 @@
 API_BASE_URL_DEV=http://localhost:8080
-API_BASE_URL_STAGING=https://staging.api.healthos.app
-API_BASE_URL_PROD=https://api.healthos.app
+API_BASE_URL_STAGING=https://health-apis.onrender.com
+API_BASE_URL_PROD=https://health-apis.onrender.com
 SENTRY_DSN=

@@ -71,6 +71,7 @@ private val TextMuted = Color(0xFFA8B7D2)
 fun HealthOsApp(viewModel: AuthViewModel = hiltViewModel()) {
     val session by viewModel.session.collectAsState(initial = null)
     val authState by viewModel.authState.collectAsState()
+    val loginResult by viewModel.loginResult.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(authState.error) {
@@ -88,8 +89,11 @@ fun HealthOsApp(viewModel: AuthViewModel = hiltViewModel()) {
                 AuthFlow(
                     modifier = Modifier.padding(padding),
                     loading = authState.loading,
+                    loginResult = loginResult,
                     onLogin = viewModel::login,
+                    onLoginResultConsumed = viewModel::clearLoginResult,
                     onRegister = viewModel::register,
+                    onVerifyEmail = viewModel::verifyEmail,
                     onVerify2FA = viewModel::verify2FA,
                     onResend2FA = viewModel::resend2FA,
                     onForgot = viewModel::forgotPassword,
@@ -103,8 +107,11 @@ fun HealthOsApp(viewModel: AuthViewModel = hiltViewModel()) {
 private fun AuthFlow(
     modifier: Modifier,
     loading: Boolean,
+    loginResult: Boolean?,
     onLogin: (String, String) -> Unit,
+    onLoginResultConsumed: () -> Unit,
     onRegister: (String, String, Role, String, String) -> Unit,
+    onVerifyEmail: (String, String) -> Unit,
     onVerify2FA: (String, String) -> Unit,
     onResend2FA: (String) -> Unit,
     onForgot: (String) -> Unit,
@@ -113,6 +120,13 @@ private fun AuthFlow(
     var step by remember { mutableIntStateOf(0) }
     var currentEmail by remember { mutableStateOf("") }
     val scrollState = rememberScrollState()
+
+    LaunchedEffect(loginResult) {
+        if (loginResult == true) {
+            step = 3
+        }
+        onLoginResultConsumed()
+    }
 
     ProvideWindowSizeInfo { sizeInfo ->
         val horizontalPadding = if (sizeInfo.isCompact) 16.dp else 32.dp
@@ -158,16 +172,20 @@ private fun AuthFlow(
                     )
                     Spacer(Modifier.height(24.dp))
                     when (step) {
-                        0 -> WelcomeScreen(onLogin = { step = 1 }, onRegister = { step = 2 })
+                        0 -> WelcomeScreen(
+                            onLogin = { step = 1 },
+                            onRegister = { step = 2 },
+                            onVerifyEmail = { step = 6 },
+                        )
                         1 ->
                             LoginScreen(
                                 loading = loading,
                                 onLogin = { email, pass ->
                                     currentEmail = email
                                     onLogin(email, pass)
-                                    step = 3
                                 },
                                 onForgot = { step = 4 },
+                                onVerifyEmail = { step = 6 },
                                 onBack = { step = 0 },
                             )
                         2 ->
@@ -186,10 +204,23 @@ private fun AuthFlow(
                                 email = currentEmail,
                                 onVerify = onVerify2FA,
                                 onResend = onResend2FA,
+                                onVerifyEmail = { step = 6 },
                                 onBack = { step = 0 },
                             )
                         4 -> ForgotPasswordScreen(loading, onForgot, onBack = { step = 1 })
                         5 -> OnboardingScreen(loading, onOnboarding)
+                        6 ->
+                            VerifyEmailScreen(
+                                loading = loading,
+                                email = currentEmail,
+                                onVerify = { em, token ->
+                                    onVerifyEmail(em, token)
+                                    step = 1
+                                },
+                                onResend = onResend2FA,
+                                onGoTo2FA = { step = 3 },
+                                onBack = { step = 0 },
+                            )
                     }
                 }
             }
@@ -201,6 +232,7 @@ private fun AuthFlow(
 private fun WelcomeScreen(
     onLogin: () -> Unit,
     onRegister: () -> Unit,
+    onVerifyEmail: () -> Unit,
 ) {
     Button(
         onClick = onLogin,
@@ -219,6 +251,15 @@ private fun WelcomeScreen(
     ) {
         Text("Registro", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
     }
+    Spacer(Modifier.height(10.dp))
+    OutlinedButton(
+        onClick = onVerifyEmail,
+        modifier = Modifier.fillMaxWidth().height(46.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = AccentBlue),
+    ) {
+        Text("Verificar Código de Correo", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+    }
 }
 
 @Composable
@@ -226,6 +267,7 @@ private fun LoginScreen(
     loading: Boolean,
     onLogin: (String, String) -> Unit,
     onForgot: () -> Unit,
+    onVerifyEmail: () -> Unit,
     onBack: () -> Unit,
 ) {
     var email by remember { mutableStateOf("") }
@@ -236,6 +278,10 @@ private fun LoginScreen(
     Spacer(Modifier.height(8.dp))
     OutlinedButton(onClick = onForgot, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
         Text("Recuperar contraseña", color = AccentBlue)
+    }
+    Spacer(Modifier.height(4.dp))
+    OutlinedButton(onClick = onVerifyEmail, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+        Text("Validar token de correo (OTP)", color = AccentTeal)
     }
     Spacer(Modifier.height(4.dp))
     OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
@@ -285,7 +331,7 @@ private fun RegisterScreen(
             Text("Cuidador")
         }
     }
-    ActionButton(loading, "Crear cuenta y recibir 2FA") {
+    ActionButton(loading, "Crear cuenta y verificar correo") {
         onRegister(email, password, role, firstName, lastName)
     }
     Spacer(Modifier.height(4.dp))
@@ -295,11 +341,63 @@ private fun RegisterScreen(
 }
 
 @Composable
+private fun VerifyEmailScreen(
+    loading: Boolean,
+    email: String,
+    onVerify: (String, String) -> Unit,
+    onResend: (String) -> Unit,
+    onGoTo2FA: () -> Unit,
+    onBack: () -> Unit,
+) {
+    var userEmail by remember { mutableStateOf(email) }
+    var code by remember { mutableStateOf("") }
+
+    Text(
+        text = "A4. Verificación de Correo",
+        color = AccentTeal,
+        fontSize = 18.sp,
+        fontWeight = FontWeight.Bold,
+    )
+    Text(
+        text = "Ingresa el código OTP o token recibido en tu correo electrónico tras registrarte.",
+        color = TextMuted,
+        fontSize = 12.sp,
+        modifier = Modifier.padding(vertical = 4.dp),
+    )
+    Spacer(Modifier.height(8.dp))
+    Field("Email registrado", userEmail) { userEmail = it }
+    Field("Código de verificación (Token)", code) {
+        if (it.length <= 32) code = it.trim()
+    }
+    Spacer(Modifier.height(8.dp))
+    ActionButton(loading, "Validar Correo") {
+        onVerify(userEmail, code)
+    }
+    Spacer(Modifier.height(8.dp))
+    OutlinedButton(
+        onClick = { onResend(userEmail) },
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Text("Reenviar código de verificación", color = AccentBlue)
+    }
+    Spacer(Modifier.height(4.dp))
+    OutlinedButton(onClick = onGoTo2FA, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+        Text("Ir a Verificación 2FA", color = AccentTeal)
+    }
+    Spacer(Modifier.height(4.dp))
+    OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+        Text("Volver al inicio", color = TextMuted)
+    }
+}
+
+@Composable
 private fun TwoFactorVerifyScreen(
     loading: Boolean,
     email: String,
     onVerify: (String, String) -> Unit,
     onResend: (String) -> Unit,
+    onVerifyEmail: () -> Unit,
     onBack: () -> Unit,
 ) {
     var userEmail by remember { mutableStateOf(email) }
@@ -335,6 +433,10 @@ private fun TwoFactorVerifyScreen(
         Text("Reenviar código (SendGrid)", color = AccentBlue)
     }
     Spacer(Modifier.height(4.dp))
+    OutlinedButton(onClick = onVerifyEmail, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+        Text("Validar Correo Electrónico", color = AccentTeal)
+    }
+    Spacer(Modifier.height(4.dp))
     OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
         Text("Volver al inicio", color = TextMuted)
     }
@@ -346,9 +448,25 @@ private fun ForgotPasswordScreen(
     onForgot: (String) -> Unit,
     onBack: () -> Unit,
 ) {
-    var email by remember { mutableStateOf("paciente@ejemplo.com") }
-    Field("Email", email) { email = it }
-    ActionButton(loading, "Enviar reset") { onForgot(email) }
+    var email by remember { mutableStateOf("") }
+
+    Text(
+        text = "Recuperar contraseña",
+        color = AccentTeal,
+        fontSize = 18.sp,
+        fontWeight = FontWeight.Bold,
+    )
+    Text(
+        text = "Te enviaremos un enlace seguro para restablecer tu contraseña.",
+        color = TextMuted,
+        fontSize = 12.sp,
+        modifier = Modifier.padding(vertical = 4.dp),
+    )
+    Spacer(Modifier.height(8.dp))
+    Field("Email registrado", email) { email = it }
+    ActionButton(loading, "Enviar enlace de recuperación") {
+        onForgot(email)
+    }
     Spacer(Modifier.height(4.dp))
     OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
         Text("Volver", color = TextMuted)
@@ -360,14 +478,32 @@ private fun OnboardingScreen(
     loading: Boolean,
     onOnboarding: (Double, Int, String) -> Unit,
 ) {
-    var weight by remember { mutableStateOf("75.5") }
-    var height by remember { mutableStateOf("180") }
-    var bloodType by remember { mutableStateOf("O+") }
-    Field("Peso kg", weight) { weight = it }
-    Field("Altura cm", height) { height = it }
-    Field("Tipo sangre", bloodType) { bloodType = it }
+    var weight by remember { mutableStateOf("") }
+    var height by remember { mutableStateOf("") }
+    var bloodType by remember { mutableStateOf("") }
+
+    Text(
+        text = "Completa tu perfil de salud",
+        color = AccentTeal,
+        fontSize = 18.sp,
+        fontWeight = FontWeight.Bold,
+    )
+    Text(
+        text = "Estos datos ayudan al motor de riesgo a evaluar tus signos vitales.",
+        color = TextMuted,
+        fontSize = 12.sp,
+        modifier = Modifier.padding(vertical = 4.dp),
+    )
+    Spacer(Modifier.height(8.dp))
+    Field("Peso (kg)", weight) { weight = it }
+    Field("Altura (cm)", height) { height = it }
+    Field("Grupo sanguíneo (A+, O-, ...)", bloodType) { bloodType = it }
     ActionButton(loading, "Guardar perfil") {
-        onOnboarding(weight.toDoubleOrNull() ?: 0.0, height.toIntOrNull() ?: 0, bloodType)
+        val w = weight.toDoubleOrNull()
+        val h = height.toIntOrNull()
+        if (w != null && h != null && w in 20.0..300.0 && h in 50..250 && bloodType.isNotBlank()) {
+            onOnboarding(w, h, bloodType.trim().uppercase())
+        }
     }
 }
 

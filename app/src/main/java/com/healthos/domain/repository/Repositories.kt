@@ -24,10 +24,16 @@ interface AuthRepository {
         lastName: String,
     ): UserProfile
 
+    /**
+     * Intenta iniciar sesión. El backend siempre responde primero con un
+     * desafío 2FA; este método devuelve `true` si el desafío fue emitido
+     * correctamente (el código OTP se envió por correo). En caso de
+     * credenciales inválidas o error, lanza una excepción.
+     */
     suspend fun login(
         email: String,
         password: String,
-    ): Session
+    ): Boolean
 
     suspend fun verifyEmail(
         email: String,
@@ -57,6 +63,10 @@ interface PatientRepository {
 
     fun devices(): Flow<List<WearableDevice>>
 
+    fun pendingSyncCount(): Flow<Int>
+
+    fun healthProfile(): Flow<HealthProfile?>
+
     suspend fun measurements(
         metric: String,
         days: Int,
@@ -69,6 +79,8 @@ interface PatientRepository {
     suspend fun linkDevice(device: WearableDevice)
 
     suspend fun unlinkDevice(id: String)
+
+    suspend fun saveBleMeasurement(value: Double)
 
     suspend fun runPreventiveAnalysis(): MlRiskResult
 }

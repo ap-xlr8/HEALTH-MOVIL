@@ -37,6 +37,9 @@ interface HealthOsDao {
     @Query("SELECT * FROM measurements WHERE syncStatus = 'PENDING' ORDER BY timestamp ASC LIMIT :limit")
     suspend fun getPendingMeasurements(limit: Int): List<MeasurementEntity>
 
+    @Query("SELECT COUNT(*) FROM measurements WHERE syncStatus = 'PENDING'")
+    fun countPendingMeasurements(): Flow<Int>
+
     @Query("UPDATE measurements SET syncStatus = :status WHERE id IN (:ids)")
     suspend fun updateSyncStatus(
         ids: List<String>,

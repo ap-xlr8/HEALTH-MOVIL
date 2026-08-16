@@ -4,6 +4,8 @@ import com.healthos.data.remote.ApiResponse
 import com.healthos.data.remote.AuthApiService
 import com.healthos.data.remote.ForgotPasswordRequestDto
 import com.healthos.data.remote.HealthProfileRequestDto
+import com.healthos.data.remote.LoginChallengeDto
+import com.healthos.data.remote.LoginEnvelopeDto
 import com.healthos.data.remote.LoginRequestDto
 import com.healthos.data.remote.LoginResponseDto
 import com.healthos.data.remote.RefreshTokenRequestDto
@@ -20,7 +22,6 @@ import kotlinx.coroutines.runBlocking
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -81,16 +82,16 @@ class FakeAuthApiService : AuthApiService {
         )
     }
 
-    override suspend fun login(request: LoginRequestDto): Response<LoginResponseDto> {
+    override suspend fun login(request: LoginRequestDto): Response<LoginEnvelopeDto> {
         if (shouldFailLogin) {
             val errorBody = "{\"error\": \"Unauthorized\"}".toResponseBody("application/json".toMediaTypeOrNull())
             return Response.error(401, errorBody)
         }
         return Response.success(
-            LoginResponseDto(
-                accessToken = "access_token_123",
-                refreshToken = "refresh_token_123",
-                role = if (request.email.contains("cuidador")) "caregiver" else "patient",
+            LoginEnvelopeDto(
+                status = "2fa_required",
+                message = "Código de seguridad enviado a tu correo.",
+                data = LoginChallengeDto(userId = "USR-001", email = request.email, expiresIn = 600),
             ),
         )
     }
@@ -124,17 +125,15 @@ class FakeAuthApiService : AuthApiService {
 
 class AuthRepositoryTest {
     @Test
-    fun login_successful_returnsValidSessionAndPersistsToken() =
+    fun login_successful_returns2FARequiredAndDoesNotPersistToken() =
         runBlocking {
             val fakeApi = FakeAuthApiService()
             val fakeStore = FakeTokenStore()
             val repository = AuthRepositoryImpl(fakeApi, fakeStore)
 
-            val session = repository.login("user@healthos.app", "Password123!")
-            assertNotNull(session)
-            assertEquals("access_token_123", session.accessToken)
-            assertEquals(Role.PATIENT, session.role)
-            assertEquals("access_token_123", fakeStore.accessToken())
+            val twoFactorRequired = repository.login("user@healthos.app", "Password123!")
+            assertTrue(twoFactorRequired)
+            assertEquals(null, fakeStore.accessToken())
         }
 
     @Test

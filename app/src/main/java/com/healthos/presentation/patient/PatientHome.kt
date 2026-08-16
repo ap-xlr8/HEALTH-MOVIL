@@ -1,5 +1,9 @@
 package com.healthos.presentation.patient
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -37,7 +41,6 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
@@ -45,7 +48,6 @@ import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Air
 import androidx.compose.material.icons.outlined.Sensors
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -80,6 +82,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -87,7 +90,10 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.healthos.bluetooth.BleState
+import com.healthos.bluetooth.ScannedBleDevice
 import com.healthos.domain.model.Alert
+import com.healthos.domain.model.HealthProfile
 import com.healthos.domain.model.Measurement
 import com.healthos.domain.model.Medication
 import com.healthos.domain.model.MetricType
@@ -125,6 +131,10 @@ fun PatientHome(
     val medications by viewModel.medications.collectAsState()
     val alerts by viewModel.alerts.collectAsState()
     val devices by viewModel.devices.collectAsState()
+    val pendingSyncCount by viewModel.pendingSyncCount.collectAsState()
+    val healthProfile by viewModel.healthProfile.collectAsState()
+    val bleState by viewModel.bleState.collectAsState()
+    val scannedDevices by viewModel.scannedDevices.collectAsState()
     val actionState by viewModel.actionState.collectAsState()
     var selected by remember { mutableIntStateOf(0) }
     val tabs =
@@ -151,6 +161,8 @@ fun PatientHome(
                         measurements = measurements,
                         medications = medications,
                         alerts = alerts,
+                        devices = devices,
+                        pendingSyncCount = pendingSyncCount,
                         actionState = actionState,
                         sizeInfo = sizeInfo,
                         onAnalyze = viewModel::analyzeRisk,
@@ -158,8 +170,19 @@ fun PatientHome(
                     )
                 1 -> MetricsScreen(contentModifier, measurements, sizeInfo)
                 2 -> SosScreen(contentModifier, sizeInfo, viewModel::triggerSos)
-                3 -> DevicesScreen(contentModifier, devices, sizeInfo, viewModel::linkMockDevice, viewModel::unlinkDevice)
-                4 -> ProfileScreen(contentModifier, sizeInfo, onLogout)
+                3 ->
+                    DevicesScreen(
+                        contentModifier,
+                        devices,
+                        bleState,
+                        scannedDevices,
+                        sizeInfo,
+                        viewModel::startBleScan,
+                        viewModel::stopBleScan,
+                        viewModel::connectToScannedDevice,
+                        viewModel::unlinkDevice,
+                    )
+                4 -> ProfileScreen(contentModifier, healthProfile, sizeInfo, onLogout)
             }
         }
     }
@@ -365,6 +388,8 @@ private fun DashboardScreen(
     measurements: List<Measurement>,
     medications: List<Medication>,
     alerts: List<Alert>,
+    devices: List<WearableDevice>,
+    pendingSyncCount: Int,
     actionState: PatientActionState,
     sizeInfo: WindowSizeInfo,
     onAnalyze: () -> Unit,
@@ -372,6 +397,8 @@ private fun DashboardScreen(
 ) {
     val heart = measurements.firstOrNull { it.metricType == MetricType.HEART_RATE }
     val spo2 = measurements.firstOrNull { it.metricType == MetricType.SPO2 }
+    val heartValue = heart?.value?.roundToInt()?.toString()
+    val spo2Value = spo2?.value?.roundToInt()?.toString()
     val horizontalPadding = if (sizeInfo.isCompact) 16.dp else 32.dp
 
     Box(
@@ -405,7 +432,7 @@ private fun DashboardScreen(
                 }
             }
             item {
-                SyncCard()
+                SyncCard(pendingSyncCount = pendingSyncCount)
             }
 
             if (sizeInfo.isCompact && !sizeInfo.isLandscape) {
@@ -414,18 +441,18 @@ private fun DashboardScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         MetricTile(
                             title = "Ritmo Cardiaco",
-                            value = (heart?.value ?: 74.0).roundToInt().toString(),
+                            value = heartValue ?: "—",
                             unit = "bpm",
-                            status = "TFLite ML On-Device",
+                            status = if (heart != null) "TFLite ML On-Device" else "Sin datos",
                             icon = Icons.Filled.Favorite,
                             accent = PinkSoft,
                             modifier = Modifier.weight(1f),
                         )
                         MetricTile(
                             title = "Oxigeno SpO2",
-                            value = (spo2?.value ?: 98.0).roundToInt().toString(),
+                            value = spo2Value ?: "—",
                             unit = "%",
-                            status = "Rango Optimo",
+                            status = if (spo2 != null) "Rango Optimo" else "Sin datos",
                             icon = Icons.Outlined.Air,
                             accent = Color(0xFF08B6D7),
                             modifier = Modifier.weight(1f),
@@ -436,7 +463,7 @@ private fun DashboardScreen(
                     MlRuntimeCard(actionState = actionState, onAnalyze = onAnalyze)
                 }
                 item {
-                    DeviceSummaryCard()
+                    DeviceSummaryCard(devices = devices)
                 }
                 item {
                     MedicationCard(medications = medications, onMedicationTaken = onMedicationTaken)
@@ -459,25 +486,25 @@ private fun DashboardScreen(
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 MetricTile(
                                     title = "Ritmo Cardiaco",
-                                    value = (heart?.value ?: 74.0).roundToInt().toString(),
+                                    value = heartValue ?: "—",
                                     unit = "bpm",
-                                    status = "TFLite ML On-Device",
+                                    status = if (heart != null) "TFLite ML On-Device" else "Sin datos",
                                     icon = Icons.Filled.Favorite,
                                     accent = PinkSoft,
                                     modifier = Modifier.weight(1f),
                                 )
                                 MetricTile(
                                     title = "Oxigeno SpO2",
-                                    value = (spo2?.value ?: 98.0).roundToInt().toString(),
+                                    value = spo2Value ?: "—",
                                     unit = "%",
-                                    status = "Rango Optimo",
+                                    status = if (spo2 != null) "Rango Optimo" else "Sin datos",
                                     icon = Icons.Outlined.Air,
                                     accent = Color(0xFF08B6D7),
                                     modifier = Modifier.weight(1f),
                                 )
                             }
                             MlRuntimeCard(actionState = actionState, onAnalyze = onAnalyze)
-                            DeviceSummaryCard()
+                            DeviceSummaryCard(devices = devices)
                         }
                         // Right Column
                         Column(
@@ -505,19 +532,23 @@ private fun Avatar() {
                 .border(1.dp, Color(0xFF46556F), CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        Text("CL", color = TextMain, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        Icon(Icons.Filled.Person, null, tint = TextMain, modifier = Modifier.size(24.dp))
     }
 }
 
 @Composable
-private fun SyncCard() {
+private fun SyncCard(pendingSyncCount: Int) {
     DarkCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.Refresh, null, tint = Blue, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text("WorkManager Outbox Sync", color = Blue, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                Text("0 registros pendientes", color = TextMuted, fontSize = 13.sp)
+                Text(
+                    if (pendingSyncCount == 0) "Todo sincronizado" else "$pendingSyncCount registros pendientes",
+                    color = TextMuted,
+                    fontSize = 13.sp,
+                )
             }
             Pill("SQLite + Room", Blue, Color(0xFF0F326C))
         }
@@ -590,22 +621,27 @@ private fun MlRuntimeCard(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Column {
-                MonoText("Modelo: arrhythmia_v2.tflite", color = TextMain, size = 14)
+                MonoText("Modelo: heart_rate_anomaly.tflite", color = TextMain, size = 14)
                 Spacer(Modifier.height(6.dp))
-                Text("Tiempo Inferencia: 14 ms", color = TextMuted, fontSize = 12.sp)
+                Text("Inferencia on-device sin conexión", color = TextMuted, fontSize = 12.sp)
             }
             Column(horizontalAlignment = Alignment.End) {
-                Text(actionState.risk?.label ?: "Sin anomalías", color = TealBright, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text(actionState.risk?.label ?: "Sin analizar", color = TealBright, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 Spacer(Modifier.height(6.dp))
-                val confidence = ((actionState.risk?.score ?: 0.984f) * 100).roundToInt()
-                Text("Confianza: $confidence.4%", color = TealBright, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                val confidence = actionState.risk?.score
+                if (confidence != null) {
+                    Text("Confianza: ${(confidence * 100).roundToInt()}%", color = TealBright, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                } else {
+                    Text("Pulsa para analizar", color = TextMuted, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun DeviceSummaryCard() {
+private fun DeviceSummaryCard(devices: List<WearableDevice>) {
+    val device = devices.firstOrNull()
     DarkCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
@@ -621,10 +657,16 @@ private fun DeviceSummaryCard() {
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("Xiaomi Band 8", color = TextMain, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
-                Text("● Conectado BLE GATT", color = TealBright, fontSize = 12.sp)
+                Text(device?.model ?: "Sin dispositivo vinculado", color = TextMain, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                Text(
+                    if (device != null) "● Conectado BLE GATT" else "Vincula tu banda wearable para registrar signos vitales.",
+                    color = if (device != null) TealBright else TextMuted,
+                    fontSize = 12.sp,
+                )
             }
-            OutlinePillButton("Gestionar") {}
+            if (device != null) {
+                OutlinePillButton("Gestionar") {}
+            }
         }
     }
 }
@@ -635,13 +677,7 @@ private fun MedicationCard(
     onMedicationTaken: (String) -> Unit,
 ) {
     DarkCard {
-        val fallback =
-            listOf(
-                Medication("med-1", "Enalapril", "10mg", "08:00 AM", true),
-                Medication("med-2", "Aspirina", "100mg", "20:00 PM", false),
-            )
-        val meds = medications.ifEmpty { fallback }
-        val taken = meds.count { it.takenToday }
+        val taken = medications.count { it.takenToday }
 
         Row(verticalAlignment = Alignment.Top) {
             Text(
@@ -652,7 +688,7 @@ private fun MedicationCard(
                 modifier = Modifier.weight(1f),
             )
             Text(
-                "$taken de ${meds.size}\ntomados",
+                "$taken de ${medications.size}\ntomados",
                 color = TextMain,
                 fontWeight = FontWeight.Bold,
                 fontSize = 12.sp,
@@ -660,9 +696,13 @@ private fun MedicationCard(
             )
         }
         Spacer(Modifier.height(12.dp))
-        meds.forEach { medication ->
-            MedicationRow(medication = medication, onMedicationTaken = onMedicationTaken)
-            Spacer(Modifier.height(8.dp))
+        if (medications.isEmpty()) {
+            Text("No tienes medicamentos registrados todavía.", color = TextMuted, fontSize = 13.sp)
+        } else {
+            medications.forEach { medication ->
+                MedicationRow(medication = medication, onMedicationTaken = onMedicationTaken)
+                Spacer(Modifier.height(8.dp))
+            }
         }
     }
 }
@@ -740,6 +780,10 @@ private fun MetricsScreen(
     sizeInfo: WindowSizeInfo,
 ) {
     val horizontalPadding = if (sizeInfo.isCompact) 16.dp else 32.dp
+    val heartSeries = measurements.filter { it.metricType == MetricType.HEART_RATE }.map { it.value.toFloat() }.reversed()
+    val spo2Series = measurements.filter { it.metricType == MetricType.SPO2 }.map { it.value.toFloat() }.reversed()
+    val heartRange = chartRange(heartSeries, 60f, 100f)
+    val spo2Range = chartRange(spo2Series, 90f, 100f)
 
     Box(
         modifier = modifier.fillMaxSize(),
@@ -768,9 +812,9 @@ private fun MetricsScreen(
                     ChartCard(
                         title = "Frecuencia Cardíaca (bpm)",
                         endpoint = "GET /v1/measurements",
-                        values = listOf(72f, 75f, 68f, 71f, 74f, 78f, 74f),
-                        minValue = 68f,
-                        maxValue = 78f,
+                        values = heartSeries,
+                        minValue = heartRange.first,
+                        maxValue = heartRange.second,
                         line = Color(0xFFFF466D),
                         fill = Color(0xFFFF466D).copy(alpha = 0.16f),
                     )
@@ -779,9 +823,9 @@ private fun MetricsScreen(
                     ChartCard(
                         title = "Saturación SpO2 (%)",
                         endpoint = null,
-                        values = listOf(98f, 97f, 99f, 98f, 98f, 97f, 98f),
-                        minValue = 90f,
-                        maxValue = 100f,
+                        values = spo2Series,
+                        minValue = spo2Range.first,
+                        maxValue = spo2Range.second,
                         line = Color(0xFF08C8E8),
                         fill = Color(0xFF08C8E8).copy(alpha = 0.16f),
                     )
@@ -797,9 +841,9 @@ private fun MetricsScreen(
                             ChartCard(
                                 title = "Frecuencia Cardíaca (bpm)",
                                 endpoint = "GET /v1/measurements",
-                                values = listOf(72f, 75f, 68f, 71f, 74f, 78f, 74f),
-                                minValue = 68f,
-                                maxValue = 78f,
+                                values = heartSeries,
+                                minValue = heartRange.first,
+                                maxValue = heartRange.second,
                                 line = Color(0xFFFF466D),
                                 fill = Color(0xFFFF466D).copy(alpha = 0.16f),
                             )
@@ -808,9 +852,9 @@ private fun MetricsScreen(
                             ChartCard(
                                 title = "Saturación SpO2 (%)",
                                 endpoint = null,
-                                values = listOf(98f, 97f, 99f, 98f, 98f, 97f, 98f),
-                                minValue = 90f,
-                                maxValue = 100f,
+                                values = spo2Series,
+                                minValue = spo2Range.first,
+                                maxValue = spo2Range.second,
                                 line = Color(0xFF08C8E8),
                                 fill = Color(0xFF08C8E8).copy(alpha = 0.16f),
                             )
@@ -824,23 +868,27 @@ private fun MetricsScreen(
             }
 
             item {
-                val chunks = measurements.take(6).chunked(if (sizeInfo.isCompact && !sizeInfo.isLandscape) 1 else 2)
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    chunks.forEach { rowItems ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            rowItems.forEach { measurement ->
-                                DarkCard(Modifier.weight(1f)) {
-                                    Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                                        Text(measurement.metricType.name, color = TextMain, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                        Text(
-                                            "${measurement.value} ${measurement.unit}",
-                                            color = TealBright,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 14.sp,
-                                        )
+                if (measurements.isEmpty()) {
+                    Text("Aún no hay lecturas registradas.", color = TextMuted, fontSize = 13.sp)
+                } else {
+                    val chunks = measurements.take(6).chunked(if (sizeInfo.isCompact && !sizeInfo.isLandscape) 1 else 2)
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        chunks.forEach { rowItems ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                rowItems.forEach { measurement ->
+                                    DarkCard(Modifier.weight(1f)) {
+                                        Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                            Text(measurement.metricType.name, color = TextMain, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                            Text(
+                                                "${measurement.value} ${measurement.unit}",
+                                                color = TealBright,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp,
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -850,6 +898,18 @@ private fun MetricsScreen(
             }
         }
     }
+}
+
+private fun chartRange(
+    series: List<Float>,
+    fallbackMin: Float,
+    fallbackMax: Float,
+): Pair<Float, Float> {
+    if (series.isEmpty()) return fallbackMin to fallbackMax
+    val min = series.min()
+    val max = series.max()
+    val pad = ((max - min).coerceAtLeast(1f) * 0.15f)
+    return (min - pad) to (max + pad)
 }
 
 @Composable
@@ -881,17 +941,26 @@ private fun ChartCard(
     DarkCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(title, color = TextMain, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, modifier = Modifier.weight(1f))
-            endpoint?.let { Pill(it, PinkSoft, Color(0xFF361629)) }
+            endpoint?.let {
+                val label = if (com.healthos.BuildConfig.DEBUG) it else "Historial 7D"
+                Pill(label, PinkSoft, Color(0xFF361629))
+            }
         }
         Spacer(Modifier.height(10.dp))
-        LineChart(
-            values = values,
-            minValue = minValue,
-            maxValue = maxValue,
-            line = line,
-            fill = fill,
-            modifier = Modifier.fillMaxWidth().height(190.dp),
-        )
+        if (values.isEmpty()) {
+            Box(Modifier.fillMaxWidth().height(190.dp), contentAlignment = Alignment.Center) {
+                Text("Sin datos todavía", color = TextMuted, fontSize = 13.sp)
+            }
+        } else {
+            LineChart(
+                values = values,
+                minValue = minValue,
+                maxValue = maxValue,
+                line = line,
+                fill = fill,
+                modifier = Modifier.fillMaxWidth().height(190.dp),
+            )
+        }
     }
 }
 
@@ -1009,7 +1078,7 @@ private fun SosScreen(
                             Text("Coordenadas GPS:", color = TextMain, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         }
                         Spacer(Modifier.height(6.dp))
-                        MonoText("Lat: 19.4326 | Lng: -99.1332 (CDMX)", color = Blue, size = 13)
+                        MonoText("Ubicación GPS actual del dispositivo", color = Blue, size = 13)
                         Spacer(Modifier.height(6.dp))
                         Text("Expedited Critical SyncWorker Outbox Active", color = Color(0xFF7183A6), fontSize = 11.sp)
                     }
@@ -1083,7 +1152,8 @@ private fun SosButton(
                 Spacer(Modifier.height(8.dp))
                 Text("SOS", color = TextMain, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
                 Spacer(Modifier.height(6.dp))
-                MonoText("POST /v1/alerts/sos", color = TextMain, size = 11)
+                val sosSub = if (com.healthos.BuildConfig.DEBUG) "POST /v1/alerts/sos" else "EMERGENCIA GPS"
+                MonoText(sosSub, color = TextMain, size = 11)
             }
         }
     }
@@ -1093,12 +1163,37 @@ private fun SosButton(
 private fun DevicesScreen(
     modifier: Modifier,
     devices: List<WearableDevice>,
+    bleState: BleState,
+    scannedDevices: List<ScannedBleDevice>,
     sizeInfo: WindowSizeInfo,
-    onLink: () -> Unit,
+    onScan: () -> Unit,
+    onStopScan: () -> Unit,
+    onConnect: (ScannedBleDevice) -> Unit,
     onUnlink: (String) -> Unit,
 ) {
-    var showQr by remember { mutableStateOf(false) }
     val horizontalPadding = if (sizeInfo.isCompact) 16.dp else 32.dp
+    val context = LocalContext.current
+    val requiredPermissions =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+        } else {
+            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+    val permissionLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
+            if (granted.values.all { it }) {
+                onScan()
+            }
+        }
+
+    fun requestPermissionsAndScan() {
+        val missing = requiredPermissions.filterNot { context.checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED }
+        if (missing.isEmpty()) {
+            onScan()
+        } else {
+            permissionLauncher.launch(missing.toTypedArray())
+        }
+    }
 
     Box(
         modifier = modifier.fillMaxSize(),
@@ -1114,92 +1209,128 @@ private fun DevicesScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Dispositivos & BLE", color = TextMain, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
-                    Spacer(Modifier.weight(1f))
-                    Button(
-                        onClick = { showQr = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = Teal),
-                        shape = RoundedCornerShape(10.dp),
-                    ) {
-                        Icon(Icons.Filled.QrCodeScanner, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Cámara QR", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    }
-                }
+                Text("Dispositivos & BLE", color = TextMain, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
             }
             item {
                 AdapterSelector()
             }
             item {
+                DarkCard {
+                    Text("Escáner BLE", color = TextMain, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                    Spacer(Modifier.height(10.dp))
+                    if (bleState == BleState.Scanning) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("Buscando dispositivos BLE...", color = TealBright, fontSize = 13.sp)
+                            Button(
+                                onClick = onStopScan,
+                                colors = ButtonDefaults.buttonColors(containerColor = Pink),
+                                shape = RoundedCornerShape(10.dp),
+                            ) {
+                                Text("Detener", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    } else {
+                        Button(
+                            onClick = { requestPermissionsAndScan() },
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Teal),
+                            shape = RoundedCornerShape(10.dp),
+                        ) {
+                            Icon(Icons.Filled.Bluetooth, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Buscar dispositivos BLE", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    val bleErrorMessage = (bleState as? BleState.Error)?.message
+                    if (bleErrorMessage != null) {
+                        Text(bleErrorMessage, color = PinkSoft, fontSize = 13.sp)
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    if (scannedDevices.isEmpty()) {
+                        Text(
+                            "Apunta a tu banda wearable para detectarla. Se muestran dispositivos con servicio de frecuencia cardíaca (0x180D).",
+                            color = TextMuted,
+                            fontSize = 13.sp,
+                        )
+                    } else {
+                        scannedDevices.forEach { device ->
+                            Row(
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(PanelDeep)
+                                        .border(1.dp, StrokeLine, RoundedCornerShape(10.dp))
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(device.name, color = TextMain, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    MonoText(device.mac, color = TextMuted, size = 12)
+                                }
+                                TextButton(onClick = { onConnect(device) }) {
+                                    Text("Vincular", color = TealBright, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            item {
                 Row {
                     Text(
-                        "VINCULADOS (GET /V1/DEVICES)",
+                        "DISPOSITIVOS VINCULADOS",
                         color = Blue,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.weight(1f),
                         fontSize = 14.sp,
                     )
                     Text(
-                        "${devices.size.coerceAtLeast(1)} DISPOSITIVO",
+                        "${devices.size} ${if (devices.size == 1) "DISPOSITIVO" else "DISPOSITIVOS"}",
                         color = Color(0xFF7183A6),
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp,
                     )
                 }
             }
-            itemsWithFallback(devices).forEach { device ->
+            if (devices.isEmpty()) {
                 item {
-                    DeviceRow(device = device, onUnlink = onUnlink)
+                    DarkCard {
+                        Text("Ningún dispositivo vinculado.", color = TextMain, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Usa el escáner BLE para detectar y vincular tu banda. Las mediciones se sincronizan automáticamente.",
+                            color = TextMuted,
+                            fontSize = 13.sp,
+                        )
+                    }
+                }
+            } else {
+                devices.forEach { device ->
+                    item {
+                        DeviceRow(device = device, onUnlink = onUnlink)
+                    }
                 }
             }
             item {
                 DarkCard {
-                    Text("BLE Escáner GATT Manager", color = TextMain, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                    Text("Sincronización", color = TextMain, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
                     Spacer(Modifier.height(10.dp))
-                    Column(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(PanelDeep)
-                                .border(1.dp, StrokeLine, RoundedCornerShape(10.dp))
-                                .padding(14.dp),
-                    ) {
-                        MonoText("[BLE_SCAN] Scanning Service UUID 0x180D (Heart Rate)...", color = TextMain, size = 12)
-                        Spacer(Modifier.height(6.dp))
-                        MonoText("[GATT_SUCCESS] Characteristic 0x2A37 Notification ENABLED", color = TealBright, size = 12)
-                        Spacer(Modifier.height(6.dp))
-                        MonoText("[ROOM_DB] Incoming byte[] parsed -> Room local save", color = Color(0xFF7183A6), size = 12)
-                    }
+                    Text(
+                        "Las mediciones del wearable se guardan localmente y se sincronizan con el backend en segundo plano (WorkManager).",
+                        color = TextMuted,
+                        fontSize = 13.sp,
+                    )
                 }
             }
         }
     }
-
-    if (showQr) {
-        QrDialog(
-            onDismiss = { showQr = false },
-            onDetected = {
-                onLink()
-                showQr = false
-            },
-        )
-    }
 }
-
-private fun itemsWithFallback(devices: List<WearableDevice>): List<WearableDevice> =
-    devices.ifEmpty {
-        listOf(
-            WearableDevice(
-                id = "AA:BB:CC:DD:EE:FF",
-                model = "Xiaomi Band 8",
-                protocol = com.healthos.domain.model.DeviceProtocol.PROPRIETARY_XIAOMI,
-                publicKey = "MIIBIjANBgkqhkiG9w0",
-                connected = true,
-            ),
-        )
-    }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1269,62 +1400,9 @@ private fun DeviceRow(
 }
 
 @Composable
-private fun QrDialog(
-    onDismiss: () -> Unit,
-    onDetected: () -> Unit,
-) {
-    val scrollState = rememberScrollState()
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Panel,
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("CameraX QR Scanner", color = TextMain, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), fontSize = 18.sp)
-                TextButton(onClick = onDismiss) { Text("✕", color = Blue, fontWeight = FontWeight.Bold, fontSize = 16.sp) }
-            }
-        },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(scrollState),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Box(
-                    modifier =
-                        Modifier
-                            .size(150.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(PanelDeep)
-                            .border(2.dp, Teal, RoundedCornerShape(16.dp)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.Filled.QrCodeScanner, null, tint = Color(0xFF47556F), modifier = Modifier.size(60.dp))
-                }
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    "Escaneando código QR en wearable para vinculación de public_key BLE...",
-                    color = Blue,
-                    fontSize = 14.sp,
-                    textAlign = TextAlign.Center,
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = onDetected,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = Teal),
-                shape = RoundedCornerShape(10.dp),
-            ) {
-                Text("Simular Detectado (Xiaomi Band 8)", fontWeight = FontWeight.Bold)
-            }
-        },
-    )
-}
-
-@Composable
 private fun ProfileScreen(
     modifier: Modifier,
+    healthProfile: HealthProfile?,
     sizeInfo: WindowSizeInfo,
     onLogout: () -> Unit,
 ) {
@@ -1348,12 +1426,12 @@ private fun ProfileScreen(
             }
             item {
                 DarkCard {
-                    Text("A6. PERFIL CLÍNICO", color = TextMain, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                    Text("PERFIL CLÍNICO", color = TextMain, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
                     Spacer(Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        ProfileMetric("Peso", "75.5 kg", Modifier.weight(1f))
-                        ProfileMetric("Altura", "180 cm", Modifier.weight(1f))
-                        ProfileMetric("Sangre", "O+", Modifier.weight(1f))
+                        ProfileMetric("Peso", healthProfile?.let { "${it.weightKg} kg" } ?: "—", Modifier.weight(1f))
+                        ProfileMetric("Altura", healthProfile?.let { "${it.heightCm} cm" } ?: "—", Modifier.weight(1f))
+                        ProfileMetric("Sangre", healthProfile?.bloodType ?: "—", Modifier.weight(1f))
                     }
                 }
             }

@@ -12,6 +12,8 @@ import com.healthos.data.remote.LoginRequestDto
 import com.healthos.data.remote.MedicationLogRequestDto
 import com.healthos.data.remote.PatientApiService
 import com.healthos.data.remote.RegisterRequestDto
+import com.healthos.data.remote.SosAlertRequestDto
+import com.healthos.data.remote.SosLocationDto
 import com.healthos.data.remote.SyncMeasurementItemDto
 import com.healthos.data.remote.SyncMeasurementsRequestDto
 import com.healthos.data.remote.TwoFactorResendRequestDto
@@ -98,19 +100,19 @@ class AuthRepositoryImpl
         override suspend fun login(
             email: String,
             password: String,
-        ): Session {
+        ): Boolean {
             require(email.contains("@")) { "Correo inválido." }
             require(password.isNotBlank()) { "Contraseña requerida." }
 
             val response = authApi.login(LoginRequestDto(email.trim().lowercase(), password))
             val body = response.body()
             if (response.isSuccessful && body != null) {
-                val parsedRole = extractRoleFromJwt(body.accessToken)
-                val userId = extractUserIdFromJwt(body.accessToken)
-                val session = Session(body.accessToken, body.refreshToken, parsedRole)
-                secureTokenStore.save(session.accessToken, session.refreshToken, session.role.name, userId)
-                _session.value = session
-                return session
+                // El backend emite el desafío 2FA antes de entregar tokens; los
+                // tokens solo se obtienen tras verificar el código OTP.
+                if (body.status.equals("2fa_required", ignoreCase = true)) {
+                    return true
+                }
+                throw IllegalArgumentException("Respuesta de autenticación inesperada del servidor.")
             } else {
                 val errorMsg = response.errorBody()?.string() ?: response.message()
                 throw IllegalArgumentException("Credenciales inválidas o error de autenticación: $errorMsg")
@@ -174,6 +176,7 @@ class AuthRepositoryImpl
 
         override suspend fun saveHealthProfile(profile: HealthProfile) {
             require(profile.weightKg > 0 && profile.heightCm > 0 && profile.bloodType.isNotBlank())
+            secureTokenStore.saveHealthProfile(profile.weightKg, profile.heightCm, profile.bloodType)
             try {
                 authApi.saveHealthProfile(
                     HealthProfileRequestDto(
@@ -183,7 +186,7 @@ class AuthRepositoryImpl
                     ),
                 )
             } catch (_: Exception) {
-                // Handled
+                // Guardado local; se reintentará con el backend cuando haya red.
             }
         }
 
@@ -226,7 +229,7 @@ class PatientRepositoryImpl
             }
         }
 
-        private fun currentPatientId(): String = secureTokenStore.userId().orEmpty()
+        private fun currentPatientId(): String = secureTokenStore.userId().takeIf { !it.isNullOrBlank() } ?: "me"
 
         override fun latestMeasurements(): Flow<List<Measurement>> = dao.latestMeasurements().map { list -> list.map { it.toDomain() } }
 
@@ -235,6 +238,21 @@ class PatientRepositoryImpl
         override fun activeAlerts(): Flow<List<Alert>> = dao.alerts().map { list -> list.map { it.toDomain() } }
 
         override fun devices(): Flow<List<WearableDevice>> = dao.devices().map { list -> list.map { it.toDomain() } }
+
+        override fun pendingSyncCount(): Flow<Int> = dao.countPendingMeasurements()
+
+        override fun healthProfile(): Flow<HealthProfile?> {
+            val weight = secureTokenStore.healthWeightKg()
+            val height = secureTokenStore.healthHeightCm()
+            val bloodType = secureTokenStore.healthBloodType()
+            val profile =
+                if (weight != null && height != null && bloodType != null) {
+                    HealthProfile(weight, height, bloodType)
+                } else {
+                    null
+                }
+            return MutableStateFlow(profile)
+        }
 
         override suspend fun measurements(
             metric: String,
@@ -266,22 +284,14 @@ class PatientRepositoryImpl
                 )
 
             try {
-                patientApi.syncMeasurements(
-                    SyncMeasurementsRequestDto(
-                        deviceId = "SOS_MANUAL",
-                        data =
-                            listOf(
-                                SyncMeasurementItemDto(
-                                    type = "heart_rate",
-                                    value = 110.0,
-                                    unit = "bpm",
-                                    timestamp = nowStr,
-                                ),
-                            ),
-                    ),
+                patientApi.triggerSosAlert(
+                    SosAlertRequestDto(
+                        location = SosLocationDto(lat = location.lat, lng = location.lng),
+                        trigger = "MANUAL_BUTTON"
+                    )
                 )
             } catch (_: Exception) {
-                // Logged locally in emergency alert store
+                // Preserved in local emergency database if offline
             }
 
             dao.upsertAlert(alert.toEntity())
@@ -308,6 +318,20 @@ class PatientRepositoryImpl
 
         override suspend fun unlinkDevice(id: String) {
             dao.deleteDevice(id)
+        }
+
+        override suspend fun saveBleMeasurement(value: Double) {
+            if (value <= 0.0) return
+            val entity =
+                Measurement(
+                    id = "ble_${UUID.randomUUID()}",
+                    metricType = MetricType.HEART_RATE,
+                    value = value,
+                    unit = "bpm",
+                    timestamp = java.time.Instant.now().toString(),
+                    syncStatus = SyncStatus.PENDING,
+                ).toEntity()
+            dao.upsertMeasurement(entity)
         }
 
         override suspend fun runPreventiveAnalysis(): MlRiskResult {
@@ -346,8 +370,12 @@ class PatientRepositoryImpl
                 val data = response.body()?.data
                 if (response.isSuccessful && data != null) {
                     val entities =
-                        data.map { dto ->
-                            Medication(dto.id, dto.name, dto.dosage ?: dto.dose ?: "50mg", dto.schedule, dto.takenToday).toEntity()
+                        data.mapNotNull { dto ->
+                            if (dto.id.isNullOrBlank() || dto.name.isNullOrBlank()) {
+                                null
+                            } else {
+                                Medication(dto.id, dto.name, dto.dosage ?: dto.dose.orEmpty(), dto.schedule, dto.takenToday).toEntity()
+                            }
                         }
                     dao.upsertMedications(entities)
                 }
@@ -362,6 +390,8 @@ class PatientRepositoryImpl
                 val data = response.body()?.data
                 if (response.isSuccessful && data != null) {
                     data.forEach { dto ->
+                        val deviceId = dto.serialNumber ?: dto.deviceId ?: dto.id
+                        if (deviceId.isNullOrBlank() || dto.model.isNullOrBlank()) return@forEach
                         val protocol =
                             runCatching {
                                 DeviceProtocol.valueOf(
@@ -370,8 +400,8 @@ class PatientRepositoryImpl
                             }.getOrDefault(DeviceProtocol.GATT_STANDARD)
                         dao.upsertDevice(
                             WearableDevice(
-                                id = dto.serialNumber ?: dto.deviceId ?: dto.id ?: "SN-001",
-                                model = dto.model ?: "Wearable Device",
+                                id = deviceId,
+                                model = dto.model,
                                 protocol = protocol,
                                 publicKey = dto.publicKey ?: "",
                                 connected = dto.connected,
@@ -430,9 +460,7 @@ class CaregiverRepositoryImpl
                                     remoteList.add(PatientSummary(profile.id, name, AlertStatus.NORMAL, null))
                                 }
                             } catch (_: Exception) {
-                                remoteList.add(
-                                    PatientSummary(rel.patientId, "Paciente ${rel.patientId.takeLast(6)}", AlertStatus.NORMAL, null),
-                                )
+                                // Perfil no disponible; se omite la relación en lugar de inventar datos.
                             }
                         }
                         if (remoteList.isNotEmpty()) {

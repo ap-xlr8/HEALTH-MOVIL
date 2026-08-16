@@ -6,7 +6,9 @@ import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.CertificatePinner
 import okhttp3.Interceptor
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
@@ -30,10 +32,88 @@ class AuthHeaderInterceptor
     }
 
 @Singleton
+class TokenAuthenticator
+    @Inject
+    constructor(
+        private val secureTokenStore: SecureTokenStore,
+    ) : okhttp3.Authenticator {
+        private val lock = Any()
+        private val refreshClient by lazy {
+            OkHttpClient.Builder()
+                .connectTimeout(10, TimeUnit.SECONDS)
+                .readTimeout(10, TimeUnit.SECONDS)
+                .apply { if (!BuildConfig.DEBUG) certificatePinner(HEALTHOS_CERTIFICATE_PINNER) }
+                .build()
+        }
+        private val moshi by lazy {
+            Moshi.Builder()
+                .addLast(KotlinJsonAdapterFactory())
+                .build()
+        }
+
+        override fun authenticate(route: okhttp3.Route?, response: okhttp3.Response): okhttp3.Request? {
+            if (response.priorResponse != null && response.priorResponse?.code == 401) {
+                return null // Avoid multiple retry loops
+            }
+            val currentToken = secureTokenStore.accessToken()
+            val headerToken = response.request.header("Authorization")?.removePrefix("Bearer ")
+            if (currentToken != null && currentToken != headerToken) {
+                return response.request.newBuilder()
+                    .header("Authorization", "Bearer $currentToken")
+                    .build()
+            }
+
+            synchronized(lock) {
+                val latestToken = secureTokenStore.accessToken()
+                if (latestToken != null && latestToken != headerToken) {
+                    return response.request.newBuilder()
+                        .header("Authorization", "Bearer $latestToken")
+                        .build()
+                }
+
+                val refreshToken = secureTokenStore.refreshToken() ?: return null
+                val baseUrl = if (BuildConfig.DEBUG) BuildConfig.API_BASE_URL_DEV else BuildConfig.API_BASE_URL_PROD
+                val refreshUrl = "${baseUrl.ensureTrailingSlash()}v1/auth/refresh"
+
+                val jsonBody = moshi.adapter(RefreshTokenRequestDto::class.java).toJson(RefreshTokenRequestDto(refreshToken))
+                val request = okhttp3.Request.Builder()
+                    .url(refreshUrl)
+                    .post(jsonBody.toRequestBody("application/json".toMediaType()))
+                    .header("Accept", "application/json")
+                    .build()
+
+                try {
+                    val refreshResponse = refreshClient.newCall(request).execute()
+                    if (refreshResponse.isSuccessful) {
+                        val responseBody = refreshResponse.body?.string()
+                        if (responseBody != null) {
+                            val loginDto = moshi.adapter(LoginResponseDto::class.java).fromJson(responseBody)
+                            if (loginDto != null) {
+                                val role = loginDto.role ?: secureTokenStore.role() ?: "PATIENT"
+                                val userId = secureTokenStore.userId()
+                                secureTokenStore.save(loginDto.accessToken, loginDto.refreshToken, role, userId)
+                                return response.request.newBuilder()
+                                    .header("Authorization", "Bearer ${loginDto.accessToken}")
+                                    .build()
+                            }
+                        }
+                    } else if (refreshResponse.code == 401 || refreshResponse.code == 403) {
+                        secureTokenStore.clear()
+                    }
+                } catch (_: Exception) {
+                    // Network failure during refresh
+                }
+            }
+            return null
+        }
+    }
+
+@Singleton
 class NetworkFactory
     @Inject
     constructor(
         private val authHeaderInterceptor: AuthHeaderInterceptor,
+        private val tokenAuthenticator: TokenAuthenticator,
     ) {
         private val moshi: Moshi by lazy {
             Moshi.Builder()
@@ -52,20 +132,14 @@ class NetworkFactory
             val clientBuilder =
                 OkHttpClient.Builder()
                     .addInterceptor(authHeaderInterceptor)
+                    .authenticator(tokenAuthenticator)
                     .addInterceptor(logging)
                     .connectTimeout(15, TimeUnit.SECONDS)
                     .readTimeout(15, TimeUnit.SECONDS)
                     .writeTimeout(15, TimeUnit.SECONDS)
 
             if (!BuildConfig.DEBUG) {
-                val pinner =
-                    CertificatePinner.Builder()
-                        .add("api.healthos.app", "sha256/WoiWRyIOVNa9ihaBciRSC7XHjliYS9VwUGOIud4PB18=")
-                        .add("api.healthos.app", "sha256/r/mIts6OE1MxXPUqPWnrwkW29OXmWraDp3OmPqjGA5o=") // Backup ISRG Root X1 pin
-                        .add("staging.api.healthos.app", "sha256/WoiWRyIOVNa9ihaBciRSC7XHjliYS9VwUGOIud4PB18=")
-                        .add("staging.api.healthos.app", "sha256/r/mIts6OE1MxXPUqPWnrwkW29OXmWraDp3OmPqjGA5o=") // Backup pin
-                        .build()
-                clientBuilder.certificatePinner(pinner)
+                clientBuilder.certificatePinner(HEALTHOS_CERTIFICATE_PINNER)
             }
 
             val baseUrl =
@@ -84,3 +158,13 @@ class NetworkFactory
     }
 
 private fun String.ensureTrailingSlash() = if (endsWith("/")) this else "$this/"
+
+// Certificate pins for https://health-apis.onrender.com captured from the live
+// TLS chain (leaf + intermediate + root). Keeping all three allows OkHttp to
+// accept any valid chain ordering while still failing closed against MITM.
+private val HEALTHOS_CERTIFICATE_PINNER: CertificatePinner =
+    CertificatePinner.Builder()
+        .add("health-apis.onrender.com", "sha256/BB7Exp9mdxl7TvHAZ0IRZPSyadon8vUwKSyruwUfwbE=")
+        .add("health-apis.onrender.com", "sha256/oof/q3Ysxpom1IIDft9wH2U86JkCXGKn5cuIu5tBnLs=")
+        .add("health-apis.onrender.com", "sha256/sIXXC5ZPGRpz5K8NVK56Dgeq/a+bcd0IYhOKtzJaJKI=")
+        .build()

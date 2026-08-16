@@ -2,19 +2,24 @@ package com.healthos
 
 import android.graphics.Color
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.fragment.app.FragmentActivity
 import com.healthos.presentation.HealthOsApp
+import com.healthos.presentation.biometric.BiometricGate
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.setFlags(
+            android.view.WindowManager.LayoutParams.FLAG_SECURE,
+            android.view.WindowManager.LayoutParams.FLAG_SECURE,
+        )
         window.statusBarColor = Color.rgb(2, 7, 23)
         window.navigationBarColor = Color.rgb(2, 7, 23)
         WindowCompat.setDecorFitsSystemWindows(window, true)
@@ -23,7 +28,9 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme {
                 Surface {
-                    HealthOsApp()
+                    BiometricGate {
+                        HealthOsApp()
+                    }
                 }
             }
         }

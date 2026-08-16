@@ -23,6 +23,13 @@ class AuthViewModel
         private val _authState = MutableStateFlow(AuthUiState())
         val authState = _authState.asStateFlow()
 
+        private val _loginResult = MutableStateFlow<Boolean?>(null)
+        val loginResult = _loginResult.asStateFlow()
+
+        fun clearLoginResult() {
+            _loginResult.value = null
+        }
+
         fun register(
             email: String,
             password: String,
@@ -36,8 +43,18 @@ class AuthViewModel
         fun login(
             email: String,
             password: String,
-        ) = run {
-            authRepository.login(email, password)
+        ) {
+            viewModelScope.launch {
+                _authState.value = AuthUiState(loading = true)
+                _loginResult.value = null
+                try {
+                    val twoFactorRequired = authRepository.login(email, password)
+                    _loginResult.value = twoFactorRequired
+                    _authState.value = AuthUiState()
+                } catch (error: Throwable) {
+                    _authState.value = AuthUiState(error = error.message ?: "Error inesperado")
+                }
+            }
         }
 
         fun verifyEmail(

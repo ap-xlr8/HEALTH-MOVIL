@@ -54,6 +54,18 @@ data class LoginRequestDto(
     @Json(name = "password") val password: String,
 )
 
+data class LoginChallengeDto(
+    @Json(name = "user_id") val userId: String? = null,
+    @Json(name = "email") val email: String? = null,
+    @Json(name = "expires_in") val expiresIn: Int? = null,
+)
+
+data class LoginEnvelopeDto(
+    @Json(name = "status") val status: String? = null,
+    @Json(name = "message") val message: String? = null,
+    @Json(name = "data") val data: LoginChallengeDto? = null,
+)
+
 data class LoginResponseDto(
     @Json(name = "access_token") val accessToken: String,
     @Json(name = "refresh_token") val refreshToken: String,
@@ -231,7 +243,7 @@ interface AuthApiService {
     @POST("v1/auth/login")
     suspend fun login(
         @Body request: LoginRequestDto,
-    ): Response<LoginResponseDto>
+    ): Response<LoginEnvelopeDto>
 
     @POST("v1/auth/refresh")
     suspend fun refresh(
@@ -268,6 +280,11 @@ interface AuthApiService {
 }
 
 interface PatientApiService {
+    @POST("v1/alerts/sos")
+    suspend fun triggerSosAlert(
+        @Body request: SosAlertRequestDto,
+    ): Response<AlertDto>
+
     @POST("v1/sync/measurements")
     suspend fun syncMeasurements(
         @Body request: SyncMeasurementsRequestDto,

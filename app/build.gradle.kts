@@ -21,8 +21,8 @@ android {
         testInstrumentationRunner = "com.healthos.HiltTestRunner"
 
         buildConfigField("String", "API_BASE_URL_DEV", quoted(prop("API_BASE_URL_DEV", "http://10.0.2.2:8080")))
-        buildConfigField("String", "API_BASE_URL_STAGING", quoted(prop("API_BASE_URL_STAGING", "https://staging.api.healthos.app")))
-        buildConfigField("String", "API_BASE_URL_PROD", quoted(prop("API_BASE_URL_PROD", "https://api.healthos.app")))
+        buildConfigField("String", "API_BASE_URL_STAGING", quoted(prop("API_BASE_URL_STAGING", "https://health-apis.onrender.com")))
+        buildConfigField("String", "API_BASE_URL_PROD", quoted(prop("API_BASE_URL_PROD", "https://health-apis.onrender.com")))
         buildConfigField("String", "SENTRY_DSN", quoted(prop("SENTRY_DSN", "")))
 
         javaCompileOptions {
@@ -124,7 +124,7 @@ dependencies {
     implementation("net.zetetic:android-database-sqlcipher:4.5.4")
     implementation("androidx.sqlite:sqlite-ktx:2.4.0")
 
-    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation("androidx.security:security-crypto:1.1.0")
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 

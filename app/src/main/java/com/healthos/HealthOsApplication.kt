@@ -17,7 +17,16 @@ class HealthOsApplication : Application(), Configuration.Provider {
             SentryAndroid.init(this) { options ->
                 options.dsn = BuildConfig.SENTRY_DSN
                 options.isEnableUserInteractionTracing = true
-                options.tracesSampleRate = 1.0
+                options.tracesSampleRate = 0.2
+                options.setBeforeSend { event, _ ->
+                    // Sanitizar mensajes o tags que pudieran contener PHI
+                    event.breadcrumbs?.forEach { breadcrumb ->
+                        if (breadcrumb.data.containsKey("Authorization")) {
+                            breadcrumb.data["Authorization"] = "[REDACTED]"
+                        }
+                    }
+                    event
+                }
             }
         }
     }

@@ -71,7 +71,11 @@ class CriticalSyncWorker
             if (eventId.isBlank()) return Result.failure()
             return try {
                 val nowStr = java.time.Instant.now().toString()
-                val latestHr = dao.measurements("HEART_RATE", 1).firstOrNull()?.value ?: 80.0
+                val latestHr = dao.measurements("HEART_RATE", 1).firstOrNull()?.value
+                if (latestHr == null) {
+                    // Sin medición real no se inventa una frecuencia cardíaca.
+                    return Result.success()
+                }
                 val request =
                     SyncMeasurementsRequestDto(
                         deviceId = "CRITICAL_EVENT_$eventId",

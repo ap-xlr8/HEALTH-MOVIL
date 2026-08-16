@@ -153,17 +153,21 @@ private fun CaregiverSplitView(
         ) {
             Text("Pacientes Monitoreados", color = TextMain, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(10.dp))
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                items(patients) { patient ->
-                    val isSelected = patient.id == selectedPatient?.id
-                    PatientCard(
-                        patient = patient,
-                        isSelected = isSelected,
-                        onClick = { onSelectPatient(patient) },
-                    )
+            if (patients.isEmpty()) {
+                InfoCard("Pacientes", "No tienes pacientes asignados todavía.")
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    items(patients) { patient ->
+                        val isSelected = patient.id == selectedPatient?.id
+                        PatientCard(
+                            patient = patient,
+                            isSelected = isSelected,
+                            onClick = { onSelectPatient(patient) },
+                        )
+                    }
                 }
             }
         }
@@ -200,12 +204,18 @@ private fun PatientListScreen(
         item {
             Text("Pacientes Asignados", color = TextMain, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
         }
-        items(patients) { patient ->
-            PatientCard(
-                patient = patient,
-                isSelected = patient.id == selectedPatient?.id,
-                onClick = { onSelectPatient(patient) },
-            )
+        if (patients.isEmpty()) {
+            item {
+                InfoCard("Pacientes", "No tienes pacientes asignados todavía.")
+            }
+        } else {
+            items(patients) { patient ->
+                PatientCard(
+                    patient = patient,
+                    isSelected = patient.id == selectedPatient?.id,
+                    onClick = { onSelectPatient(patient) },
+                )
+            }
         }
     }
 }

@@ -54,6 +54,24 @@ open class SecureTokenStore {
 
     open fun userId(): String? = prefs?.getString("user_id", null)
 
+    open fun saveHealthProfile(
+        weightKg: Double,
+        heightCm: Int,
+        bloodType: String,
+    ) {
+        prefs?.edit()
+            ?.putString("health_weight_kg", weightKg.toString())
+            ?.putString("health_height_cm", heightCm.toString())
+            ?.putString("health_blood_type", bloodType)
+            ?.apply()
+    }
+
+    open fun healthWeightKg(): Double? = prefs?.getString("health_weight_kg", null)?.toDoubleOrNull()
+
+    open fun healthHeightCm(): Int? = prefs?.getString("health_height_cm", null)?.toIntOrNull()
+
+    open fun healthBloodType(): String? = prefs?.getString("health_blood_type", null)
+
     open fun clear() {
         prefs?.edit()?.clear()?.apply()
     }

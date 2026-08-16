@@ -51,9 +51,17 @@ class PreventiveRiskEngine {
     }
 
     suspend fun analyze(measurements: List<Measurement>): MlRiskResult {
-        val heartRate = measurements.firstOrNull { it.metricType == MetricType.HEART_RATE }?.value ?: 0.0
-        val spo2 = measurements.firstOrNull { it.metricType == MetricType.SPO2 }?.value ?: 100.0
-        val variability = if (heartRate > 0) kotlin.math.max(15.0, 60.0 - (heartRate * 0.2)) else 45.0
+        if (measurements.isEmpty()) {
+            return MlRiskResult(0.0f, "Sin mediciones")
+        }
+
+        val heartRate = measurements.firstOrNull { it.metricType == MetricType.HEART_RATE }?.value
+        val spo2 = measurements.firstOrNull { it.metricType == MetricType.SPO2 }?.value
+        if (heartRate == null || heartRate <= 0.0) {
+            return MlRiskResult(0.0f, "Sin datos de frecuencia cardíaca")
+        }
+
+        val variability = kotlin.math.max(15.0, 60.0 - (heartRate * 0.2))
         val activityIntensity = if (heartRate > 110) 1.0f else 0.0f
 
         var anomalyScore: Float? = null
@@ -80,8 +88,8 @@ class PreventiveRiskEngine {
         // 2. Clinical calibrated risk evaluation fallback & hybrid scoring
         val computedScore =
             anomalyScore ?: when {
-                heartRate > 120 || spo2 < 92 -> 0.92f
-                heartRate > 95 || spo2 < 95 -> 0.62f
+                heartRate > 120 || (spo2 != null && spo2 < 92) -> 0.92f
+                heartRate > 95 || (spo2 != null && spo2 < 95) -> 0.62f
                 else -> 0.18f
             }
 

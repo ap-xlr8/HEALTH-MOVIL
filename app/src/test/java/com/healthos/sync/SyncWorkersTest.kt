@@ -15,6 +15,7 @@ import com.healthos.data.remote.MedicationDto
 import com.healthos.data.remote.MedicationLogRequestDto
 import com.healthos.data.remote.PatientApiService
 import com.healthos.data.remote.PatientProfileDto
+import com.healthos.data.remote.SosAlertRequestDto
 import com.healthos.data.remote.SyncMeasurementItemDto
 import com.healthos.data.remote.SyncMeasurementsRequestDto
 import com.healthos.data.remote.SyncMeasurementsResponseDto
@@ -34,6 +35,9 @@ class FakeDao : HealthOsDao {
     var updatedIds: List<String> = emptyList()
 
     override fun latestMeasurements(): Flow<List<MeasurementEntity>> = flowOf(measurementsList)
+
+    override fun countPendingMeasurements(): Flow<Int> =
+        flowOf(measurementsList.count { it.syncStatus == SyncStatus.PENDING })
 
     override suspend fun measurements(
         metric: String,
@@ -126,6 +130,9 @@ class FakePatientApi : PatientApiService {
 
     override suspend fun getDevices(): Response<ApiResponse<List<DeviceDto>>> =
         Response.success(ApiResponse(status = "success", data = emptyList()))
+
+    override suspend fun triggerSosAlert(request: SosAlertRequestDto): Response<AlertDto> =
+        Response.success(AlertDto(id = "sos_alert_1", title = "SOS Alert", severity = "CRITICAL"))
 
     override suspend fun registerDevice(request: DeviceDto): Response<ApiResponse<DeviceDto>> =
         Response.success(ApiResponse(status = "success", data = request))

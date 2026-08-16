@@ -6,8 +6,7 @@
         <domain includeSubdomains="true">127.0.0.1</domain>
     </domain-config>
     <domain-config cleartextTrafficPermitted="false">
-        <domain includeSubdomains="true">staging.api.healthos.app</domain>
-        <domain includeSubdomains="true">api.healthos.app</domain>
+        <domain includeSubdomains="true">health-apis.onrender.com</domain>
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>
