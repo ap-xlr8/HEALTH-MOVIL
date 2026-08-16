@@ -14,7 +14,9 @@ import com.healthos.data.remote.PatientApiService
 import com.healthos.data.remote.RegisterRequestDto
 import com.healthos.data.remote.SyncMeasurementItemDto
 import com.healthos.data.remote.SyncMeasurementsRequestDto
-import com.healthos.data.remote.VerifyEmailRequestDto
+import com.healthos.data.remote.TwoFactorResendRequestDto
+import com.healthos.data.remote.TwoFactorVerifyRequestDto
+import com.healthos.data.remote.VerifyEmailTokenDto
 import com.healthos.domain.model.Alert
 import com.healthos.domain.model.AlertStatus
 import com.healthos.domain.model.DeviceProtocol
@@ -63,24 +65,28 @@ class AuthRepositoryImpl
             firstName: String,
             lastName: String,
         ): UserProfile {
-            require(password.length >= 8) { "La contraseña debe tener al menos 8 caracteres." }
+            require(password.length in 9..128) { "La contraseña debe tener entre 9 y 128 caracteres." }
+            require(password.any { it.isDigit() } && password.any { !it.isLetterOrDigit() }) {
+                "La contraseña debe incluir al menos un número y un símbolo especial."
+            }
+
             val response =
                 authApi.register(
                     RegisterRequestDto(
-                        email = email,
+                        email = email.trim().lowercase(),
                         password = password,
                         role = if (role == Role.CAREGIVER) "caregiver" else "patient",
-                        firstName = firstName,
-                        lastName = lastName,
+                        firstName = firstName.trim(),
+                        lastName = lastName.trim(),
                     ),
                 )
             val data = response.body()?.data
             if (response.isSuccessful && data != null) {
                 return UserProfile(
-                    id = data.id ?: UUID.randomUUID().toString(),
-                    email = data.email ?: email,
-                    firstName = data.firstName ?: firstName,
-                    lastName = data.lastName ?: lastName,
+                    id = data.userId ?: UUID.randomUUID().toString(),
+                    email = email.trim().lowercase(),
+                    firstName = firstName.trim(),
+                    lastName = lastName.trim(),
                     role = role,
                 )
             } else {
@@ -96,13 +102,13 @@ class AuthRepositoryImpl
             require(email.contains("@")) { "Correo inválido." }
             require(password.isNotBlank()) { "Contraseña requerida." }
 
-            val response = authApi.login(LoginRequestDto(email, password))
-            val data = response.body()?.data
-            if (response.isSuccessful && data != null) {
-                val serverRoleStr = data.role ?: data.user?.role ?: "patient"
-                val parsedRole = if (serverRoleStr.equals("caregiver", ignoreCase = true)) Role.CAREGIVER else Role.PATIENT
-                val session = Session(data.accessToken, data.refreshToken, parsedRole)
-                secureTokenStore.save(session.accessToken, session.refreshToken, session.role.name)
+            val response = authApi.login(LoginRequestDto(email.trim().lowercase(), password))
+            val body = response.body()
+            if (response.isSuccessful && body != null) {
+                val parsedRole = extractRoleFromJwt(body.accessToken)
+                val userId = extractUserIdFromJwt(body.accessToken)
+                val session = Session(body.accessToken, body.refreshToken, parsedRole)
+                secureTokenStore.save(session.accessToken, session.refreshToken, session.role.name, userId)
                 _session.value = session
                 return session
             } else {
@@ -111,13 +117,45 @@ class AuthRepositoryImpl
             }
         }
 
+        override suspend fun verify2FA(
+            email: String,
+            code: String,
+        ): Session {
+            require(email.contains("@")) { "Correo inválido." }
+            require(code.isNotBlank()) { "Código de 6 dígitos requerido." }
+
+            val response = authApi.verify2FA(TwoFactorVerifyRequestDto(email.trim().lowercase(), code.trim()))
+            val body = response.body()
+            if (response.isSuccessful && body != null) {
+                val parsedRole = extractRoleFromJwt(body.accessToken)
+                val userId = extractUserIdFromJwt(body.accessToken)
+                val session = Session(body.accessToken, body.refreshToken, parsedRole)
+                secureTokenStore.save(session.accessToken, session.refreshToken, session.role.name, userId)
+                _session.value = session
+                return session
+            } else {
+                val errorMsg = response.errorBody()?.string() ?: response.message()
+                throw IllegalArgumentException("Código 2FA incorrecto o expirado (válido por 10 min): $errorMsg")
+            }
+        }
+
+        override suspend fun resend2FA(email: String): Boolean {
+            if (!email.contains("@")) return false
+            return try {
+                val response = authApi.resend2FA(TwoFactorResendRequestDto(email.trim().lowercase()))
+                response.isSuccessful
+            } catch (_: Exception) {
+                false
+            }
+        }
+
         override suspend fun verifyEmail(
             email: String,
             code: String,
         ): Boolean {
-            if (!email.contains("@") || code.length != 6) return false
+            if (code.isBlank()) return false
             return try {
-                val response = authApi.verifyEmail(VerifyEmailRequestDto(email, code))
+                val response = authApi.verifyEmail(VerifyEmailTokenDto(token = code))
                 response.isSuccessful
             } catch (_: Exception) {
                 false
@@ -127,7 +165,7 @@ class AuthRepositoryImpl
         override suspend fun forgotPassword(email: String): Boolean {
             if (!email.contains("@")) return false
             return try {
-                val response = authApi.forgotPassword(ForgotPasswordRequestDto(email))
+                val response = authApi.forgotPassword(ForgotPasswordRequestDto(email.trim().lowercase()))
                 response.isSuccessful
             } catch (_: Exception) {
                 false
@@ -150,6 +188,11 @@ class AuthRepositoryImpl
         }
 
         override suspend fun logout() {
+            try {
+                authApi.logout()
+            } catch (_: Exception) {
+                // Ignore network error on logout
+            }
             secureTokenStore.clear()
             _session.value = null
         }
@@ -170,6 +213,7 @@ class PatientRepositoryImpl
         private val patientApi: PatientApiService,
         private val dao: HealthOsDao,
         private val riskEngine: PreventiveRiskEngine,
+        private val secureTokenStore: SecureTokenStore,
     ) : PatientRepository {
         private val coroutineScope =
             CoroutineScope(Dispatchers.IO + CoroutineExceptionHandler { _, _ -> })
@@ -181,6 +225,9 @@ class PatientRepositoryImpl
                 fetchRemoteDevices()
             }
         }
+
+        private fun currentPatientId(): String =
+            secureTokenStore.userId() ?: "usr_current_patient"
 
         override fun latestMeasurements(): Flow<List<Measurement>> =
             dao.latestMeasurements().map { list -> list.map { it.toDomain() } }
@@ -204,7 +251,7 @@ class PatientRepositoryImpl
             dao.markMedicationTaken(id)
             try {
                 patientApi.logMedication(
-                    patientId = "me",
+                    patientId = currentPatientId(),
                     request = MedicationLogRequestDto(medicationId = id, status = "taken"),
                 )
             } catch (_: Exception) {
@@ -227,10 +274,10 @@ class PatientRepositoryImpl
             try {
                 patientApi.syncMeasurements(
                     SyncMeasurementsRequestDto(
-                        measurements =
+                        deviceId = "SOS_MANUAL",
+                        data =
                             listOf(
                                 SyncMeasurementItemDto(
-                                    deviceId = "SOS_MANUAL",
                                     type = "heart_rate",
                                     value = 110.0,
                                     unit = "bpm",
@@ -285,7 +332,7 @@ class PatientRepositoryImpl
 
         private suspend fun fetchRemoteMeasurements() {
             try {
-                val response = patientApi.getMeasurements("me", limit = 10)
+                val response = patientApi.getMeasurements(currentPatientId(), limit = 10)
                 val data = response.body()?.data
                 if (response.isSuccessful && data != null) {
                     data.forEach { dto ->
@@ -302,7 +349,7 @@ class PatientRepositoryImpl
 
         private suspend fun fetchRemoteMedications() {
             try {
-                val response = patientApi.getMedications("me")
+                val response = patientApi.getMedications(currentPatientId())
                 val data = response.body()?.data
                 if (response.isSuccessful && data != null) {
                     val entities =
@@ -356,15 +403,10 @@ class CaregiverRepositoryImpl
         override suspend fun patientDetail(id: String): PatientSummary? {
             return try {
                 val response = caregiverApi.getPatientProfile(id)
-                val dto = response.body()?.data
+                val dto = response.body()
                 if (response.isSuccessful && dto != null) {
-                    val status = runCatching { AlertStatus.valueOf(dto.status?.uppercase() ?: "NORMAL") }.getOrDefault(AlertStatus.NORMAL)
-                    val m =
-                        dto.latestMeasurement?.let {
-                            val type = runCatching { MetricType.valueOf(it.metricType ?: it.type?.uppercase() ?: "HEART_RATE") }.getOrDefault(MetricType.HEART_RATE)
-                            Measurement(it.id, type, it.value, it.unit, it.timestamp, SyncStatus.SYNCED)
-                        }
-                    PatientSummary(dto.id, dto.firstName, status, m)
+                    val name = "${dto.firstName} ${dto.lastName ?: ""}".trim()
+                    PatientSummary(dto.id, name, AlertStatus.NORMAL, null)
                 } else {
                     patients.value.firstOrNull { it.id == id }
                 }
@@ -376,19 +418,23 @@ class CaregiverRepositoryImpl
         private fun fetchRemotePatients() {
             CoroutineScope(Dispatchers.IO).launchSilently {
                 try {
-                    val response = caregiverApi.getPatients()
+                    val response = caregiverApi.getRelationships()
                     val data = response.body()?.data
                     if (response.isSuccessful && data != null) {
-                        val remoteList =
-                            data.map { dto ->
-                                val status = runCatching { AlertStatus.valueOf(dto.status?.uppercase() ?: "NORMAL") }.getOrDefault(AlertStatus.NORMAL)
-                                val m =
-                                    dto.latestMeasurement?.let {
-                                        val type = runCatching { MetricType.valueOf(it.metricType ?: it.type?.uppercase() ?: "HEART_RATE") }.getOrDefault(MetricType.HEART_RATE)
-                                        Measurement(it.id, type, it.value, it.unit, it.timestamp, SyncStatus.SYNCED)
-                                    }
-                                PatientSummary(dto.id, dto.firstName, status, m)
+                        val activeRelationships = data.filter { it.status.equals("active", ignoreCase = true) }
+                        val remoteList = mutableListOf<PatientSummary>()
+                        for (rel in activeRelationships) {
+                            try {
+                                val profileRes = caregiverApi.getPatientProfile(rel.patientId)
+                                if (profileRes.isSuccessful && profileRes.body() != null) {
+                                    val profile = profileRes.body()!!
+                                    val name = "${profile.firstName} ${profile.lastName ?: ""}".trim()
+                                    remoteList.add(PatientSummary(profile.id, name, AlertStatus.NORMAL, null))
+                                }
+                            } catch (_: Exception) {
+                                remoteList.add(PatientSummary(rel.patientId, "Paciente ${rel.patientId.takeLast(6)}", AlertStatus.NORMAL, null))
                             }
+                        }
                         if (remoteList.isNotEmpty()) {
                             patients.value = remoteList
                         }
@@ -399,6 +445,35 @@ class CaregiverRepositoryImpl
             }
         }
     }
+
+private fun extractUserIdFromJwt(token: String): String? {
+    return try {
+        val parts = token.split(".")
+        if (parts.size >= 2) {
+            val payloadBytes = android.util.Base64.decode(parts[1], android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP)
+            val json = String(payloadBytes, Charsets.UTF_8)
+            val regex = Regex("\"(uid|sub|user_id)\"\\s*:\\s*\"([^\"]+)\"")
+            regex.find(json)?.groupValues?.get(2)
+        } else null
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun extractRoleFromJwt(token: String): Role {
+    return try {
+        val parts = token.split(".")
+        if (parts.size >= 2) {
+            val payloadBytes = android.util.Base64.decode(parts[1], android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP)
+            val json = String(payloadBytes, Charsets.UTF_8)
+            val regex = Regex("\"role\"\\s*:\\s*\"([^\"]+)\"")
+            val roleStr = regex.find(json)?.groupValues?.get(1) ?: "patient"
+            if (roleStr.equals("caregiver", ignoreCase = true)) Role.CAREGIVER else Role.PATIENT
+        } else Role.PATIENT
+    } catch (_: Exception) {
+        Role.PATIENT
+    }
+}
 
 private fun CoroutineScope.launchSilently(block: suspend () -> Unit) {
     launch(CoroutineExceptionHandler { _, _ -> }) { block() }

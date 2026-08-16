@@ -91,7 +91,8 @@ fun HealthOsApp(viewModel: AuthViewModel = hiltViewModel()) {
                     loading = authState.loading,
                     onLogin = viewModel::login,
                     onRegister = viewModel::register,
-                    onVerify = viewModel::verifyEmail,
+                    onVerify2FA = viewModel::verify2FA,
+                    onResend2FA = viewModel::resend2FA,
                     onForgot = viewModel::forgotPassword,
                     onOnboarding = viewModel::saveHealthProfile,
                 )
@@ -105,11 +106,13 @@ private fun AuthFlow(
     loading: Boolean,
     onLogin: (String, String) -> Unit,
     onRegister: (String, String, Role, String, String) -> Unit,
-    onVerify: (String, String) -> Unit,
+    onVerify2FA: (String, String) -> Unit,
+    onResend2FA: (String) -> Unit,
     onForgot: (String) -> Unit,
     onOnboarding: (Double, Int, String) -> Unit,
 ) {
     var step by remember { mutableIntStateOf(0) }
+    var currentEmail by remember { mutableStateOf("") }
     val scrollState = rememberScrollState()
 
     ProvideWindowSizeInfo { sizeInfo ->
@@ -149,7 +152,7 @@ private fun AuthFlow(
                         fontWeight = FontWeight.ExtraBold,
                     )
                     Text(
-                        text = "Sistema Autónomo de Salud",
+                        text = "Sistema Autónomo de Salud (2FA)",
                         color = AccentBlue,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium,
@@ -157,9 +160,32 @@ private fun AuthFlow(
                     Spacer(Modifier.height(24.dp))
                     when (step) {
                         0 -> WelcomeScreen(onLogin = { step = 1 }, onRegister = { step = 2 })
-                        1 -> LoginScreen(loading, onLogin, onForgot = { step = 4 }, onBack = { step = 0 })
-                        2 -> RegisterScreen(loading, onRegister, onNext = { step = 3 }, onBack = { step = 0 })
-                        3 -> VerifyEmailScreen(loading, onVerify, onNext = { step = 5 }, onBack = { step = 2 })
+                        1 -> LoginScreen(
+                            loading = loading,
+                            onLogin = { email, pass ->
+                                currentEmail = email
+                                onLogin(email, pass)
+                                step = 3
+                            },
+                            onForgot = { step = 4 },
+                            onBack = { step = 0 },
+                        )
+                        2 -> RegisterScreen(
+                            loading = loading,
+                            onRegister = { email, pass, role, first, last ->
+                                currentEmail = email
+                                onRegister(email, pass, role, first, last)
+                                step = 3
+                            },
+                            onBack = { step = 0 },
+                        )
+                        3 -> TwoFactorVerifyScreen(
+                            loading = loading,
+                            email = currentEmail,
+                            onVerify = onVerify2FA,
+                            onResend = onResend2FA,
+                            onBack = { step = 0 },
+                        )
                         4 -> ForgotPasswordScreen(loading, onForgot, onBack = { step = 1 })
                         5 -> OnboardingScreen(loading, onOnboarding)
                     }
@@ -219,7 +245,6 @@ private fun LoginScreen(
 private fun RegisterScreen(
     loading: Boolean,
     onRegister: (String, String, Role, String, String) -> Unit,
-    onNext: () -> Unit,
     onBack: () -> Unit,
 ) {
     var email by remember { mutableStateOf("") }
@@ -258,9 +283,8 @@ private fun RegisterScreen(
             Text("Cuidador")
         }
     }
-    ActionButton(loading, "Crear cuenta") {
+    ActionButton(loading, "Crear cuenta y recibir 2FA") {
         onRegister(email, password, role, firstName, lastName)
-        onNext()
     }
     Spacer(Modifier.height(4.dp))
     OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
@@ -269,23 +293,48 @@ private fun RegisterScreen(
 }
 
 @Composable
-private fun VerifyEmailScreen(
+private fun TwoFactorVerifyScreen(
     loading: Boolean,
+    email: String,
     onVerify: (String, String) -> Unit,
-    onNext: () -> Unit,
+    onResend: (String) -> Unit,
     onBack: () -> Unit,
 ) {
-    var email by remember { mutableStateOf("") }
+    var userEmail by remember { mutableStateOf(email) }
     var code by remember { mutableStateOf("") }
-    Field("Email", email) { email = it }
-    Field("Codigo", code) { code = it }
-    ActionButton(loading, "Verificar") {
-        onVerify(email, code)
-        onNext()
+    
+    Text(
+        text = "Verificación 2FA (OTP)",
+        color = AccentTeal,
+        fontSize = 18.sp,
+        fontWeight = FontWeight.Bold,
+    )
+    Text(
+        text = "Hemos enviado un código numérico de 6 dígitos válido por 10 minutos.",
+        color = TextMuted,
+        fontSize = 12.sp,
+        modifier = Modifier.padding(vertical = 4.dp),
+    )
+    Spacer(Modifier.height(8.dp))
+    Field("Email registrado", userEmail) { userEmail = it }
+    Field("Código de 6 dígitos", code) { 
+        if (it.length <= 6) code = it.filter { c -> c.isDigit() }
+    }
+    Spacer(Modifier.height(8.dp))
+    ActionButton(loading, "Confirmar 2FA y Entrar") {
+        onVerify(userEmail, code)
+    }
+    Spacer(Modifier.height(8.dp))
+    OutlinedButton(
+        onClick = { onResend(userEmail) },
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Text("Reenviar código (SendGrid)", color = AccentBlue)
     }
     Spacer(Modifier.height(4.dp))
     OutlinedButton(onClick = onBack, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
-        Text("Volver", color = TextMuted)
+        Text("Volver al inicio", color = TextMuted)
     }
 }
 

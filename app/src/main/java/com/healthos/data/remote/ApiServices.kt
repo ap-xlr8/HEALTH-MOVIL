@@ -3,7 +3,6 @@ package com.healthos.data.remote
 import com.squareup.moshi.Json
 import retrofit2.Response
 import retrofit2.http.Body
-import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.PUT
@@ -36,6 +35,11 @@ data class RegisterRequestDto(
     @Json(name = "active_conditions") val activeConditions: List<String>? = null,
 )
 
+data class RegisterResponseDataDto(
+    @Json(name = "user_id") val userId: String? = null,
+    @Json(name = "message") val message: String? = null,
+)
+
 data class UserDto(
     @Json(name = "id") val id: String?,
     @Json(name = "email") val email: String?,
@@ -63,9 +67,22 @@ data class RefreshTokenRequestDto(
     @Json(name = "refresh_token") val refreshToken: String,
 )
 
-data class VerifyEmailRequestDto(
+data class VerifyEmailTokenDto(
+    @Json(name = "token") val token: String,
+)
+
+data class TwoFactorVerifyRequestDto(
     @Json(name = "email") val email: String,
     @Json(name = "code") val code: String,
+)
+
+data class TwoFactorResendRequestDto(
+    @Json(name = "email") val email: String,
+)
+
+data class VerifyEmailResponseDataDto(
+    @Json(name = "user_id") val userId: String? = null,
+    @Json(name = "message") val message: String? = null,
 )
 
 data class ForgotPasswordRequestDto(
@@ -81,11 +98,11 @@ data class HealthProfileRequestDto(
 // --- DTOs Sincronización y Mediciones ---
 
 data class SyncMeasurementsRequestDto(
-    @Json(name = "measurements") val measurements: List<SyncMeasurementItemDto>,
+    @Json(name = "device_id") val deviceId: String,
+    @Json(name = "data") val data: List<SyncMeasurementItemDto>,
 )
 
 data class SyncMeasurementItemDto(
-    @Json(name = "device_id") val deviceId: String,
     @Json(name = "type") val type: String,
     @Json(name = "value") val value: Double,
     @Json(name = "unit") val unit: String,
@@ -93,24 +110,28 @@ data class SyncMeasurementItemDto(
 )
 
 data class SyncMeasurementsResponseDto(
-    @Json(name = "inserted_count") val insertedCount: Int = 0,
-    @Json(name = "alerts_triggered") val alertsTriggered: Int = 0,
+    @Json(name = "status") val status: String? = null,
+    @Json(name = "synced_count") val syncedCount: Int = 0,
+    @Json(name = "alerts_triggered") val alertsTriggered: List<String> = emptyList(),
 )
 
 data class MeasurementDto(
     @Json(name = "id") val id: String,
+    @Json(name = "patient_id") val patientId: String? = null,
     @Json(name = "device_id") val deviceId: String? = null,
     @Json(name = "type") val type: String? = null,
     @Json(name = "metric_type") val metricType: String? = null,
     @Json(name = "value") val value: Double,
     @Json(name = "unit") val unit: String,
     @Json(name = "timestamp") val timestamp: String,
+    @Json(name = "created_at") val createdAt: String? = null,
 )
 
 // --- DTOs Medicamentos ---
 
 data class MedicationDto(
     @Json(name = "id") val id: String,
+    @Json(name = "patient_id") val patientId: String? = null,
     @Json(name = "name") val name: String,
     @Json(name = "dosage") val dosage: String? = null,
     @Json(name = "dose") val dose: String? = null,
@@ -142,6 +163,7 @@ data class AlertDto(
     @Json(name = "severity") val severity: String? = null,
     @Json(name = "status") val status: String? = null,
     @Json(name = "message") val message: String? = null,
+    @Json(name = "measurement_ref") val measurementRef: String? = null,
     @Json(name = "acknowledged") val acknowledged: Boolean = false,
     @Json(name = "created_at") val createdAt: String? = null,
     @Json(name = "timestamp") val timestamp: String? = null,
@@ -172,6 +194,15 @@ data class DeviceDto(
 
 // --- DTOs Cuidador y Pacientes ---
 
+data class PatientProfileDto(
+    @Json(name = "id") val id: String,
+    @Json(name = "first_name") val firstName: String,
+    @Json(name = "last_name") val lastName: String? = null,
+    @Json(name = "age") val age: Int? = null,
+    @Json(name = "health_profile") val healthProfile: HealthProfileRequestDto? = null,
+    @Json(name = "active_conditions") val activeConditions: List<String>? = null,
+)
+
 data class CaregiverPatientDto(
     @Json(name = "id") val id: String,
     @Json(name = "first_name") val firstName: String,
@@ -180,20 +211,38 @@ data class CaregiverPatientDto(
     @Json(name = "latest_measurement") val latestMeasurement: MeasurementDto? = null,
 )
 
+data class RelationshipDto(
+    @Json(name = "id") val id: String,
+    @Json(name = "patient_id") val patientId: String,
+    @Json(name = "caregiver_id") val caregiverId: String,
+    @Json(name = "status") val status: String,
+    @Json(name = "created_at") val createdAt: String? = null,
+    @Json(name = "updated_at") val updatedAt: String? = null,
+)
+
 // --- API Service Interfaces ---
 
 interface AuthApiService {
     @POST("v1/auth/register")
-    suspend fun register(@Body request: RegisterRequestDto): Response<ApiResponse<UserDto>>
+    suspend fun register(@Body request: RegisterRequestDto): Response<ApiResponse<RegisterResponseDataDto>>
 
     @POST("v1/auth/login")
-    suspend fun login(@Body request: LoginRequestDto): Response<ApiResponse<LoginResponseDto>>
+    suspend fun login(@Body request: LoginRequestDto): Response<LoginResponseDto>
 
     @POST("v1/auth/refresh")
-    suspend fun refresh(@Body request: RefreshTokenRequestDto): Response<ApiResponse<LoginResponseDto>>
+    suspend fun refresh(@Body request: RefreshTokenRequestDto): Response<LoginResponseDto>
 
     @POST("v1/auth/verify-email")
-    suspend fun verifyEmail(@Body request: VerifyEmailRequestDto): Response<ApiResponse<Map<String, Any>>>
+    suspend fun verifyEmail(@Body request: VerifyEmailTokenDto): Response<ApiResponse<VerifyEmailResponseDataDto>>
+
+    @POST("v1/auth/2fa/verify")
+    suspend fun verify2FA(@Body request: TwoFactorVerifyRequestDto): Response<LoginResponseDto>
+
+    @POST("v1/auth/2fa/resend")
+    suspend fun resend2FA(@Body request: TwoFactorResendRequestDto): Response<ApiResponse<Map<String, Any>>>
+
+    @POST("v1/auth/logout")
+    suspend fun logout(): Response<Map<String, String>>
 
     @POST("v1/auth/forgot-password")
     suspend fun forgotPassword(@Body request: ForgotPasswordRequestDto): Response<ApiResponse<Map<String, Any>>>
@@ -204,15 +253,19 @@ interface AuthApiService {
 
 interface PatientApiService {
     @POST("v1/sync/measurements")
-    suspend fun syncMeasurements(@Body request: SyncMeasurementsRequestDto): Response<ApiResponse<SyncMeasurementsResponseDto>>
+    suspend fun syncMeasurements(@Body request: SyncMeasurementsRequestDto): Response<SyncMeasurementsResponseDto>
 
     @GET("v1/patients/{id}/measurements")
     suspend fun getMeasurements(
         @Path("id") patientId: String,
         @Query("type") type: String? = null,
-        @Query("days") days: Int? = null,
+        @Query("from") from: String? = null,
+        @Query("to") to: String? = null,
         @Query("limit") limit: Int? = 100,
     ): Response<ApiResponse<List<MeasurementDto>>>
+
+    @GET("v1/patients/{id}")
+    suspend fun getPatient(@Path("id") patientId: String): Response<PatientProfileDto>
 
     @GET("v1/patients/{id}/medications")
     suspend fun getMedications(@Path("id") patientId: String): Response<ApiResponse<List<MedicationDto>>>
@@ -230,10 +283,10 @@ interface PatientApiService {
     ): Response<ApiResponse<Map<String, Any>>>
 
     @GET("v1/alerts/{id}")
-    suspend fun getAlertDetail(@Path("id") alertId: String): Response<ApiResponse<AlertDto>>
+    suspend fun getAlertDetail(@Path("id") alertId: String): Response<AlertDto>
 
     @POST("v1/alerts/{id}/acknowledge")
-    suspend fun acknowledgeAlert(@Path("id") alertId: String): Response<ApiResponse<AlertDto>>
+    suspend fun acknowledgeAlert(@Path("id") alertId: String): Response<AlertDto>
 
     @GET("v1/devices")
     suspend fun getDevices(): Response<ApiResponse<List<DeviceDto>>>
@@ -243,9 +296,9 @@ interface PatientApiService {
 }
 
 interface CaregiverApiService {
-    @GET("v1/caregiver/patients")
-    suspend fun getPatients(): Response<ApiResponse<List<CaregiverPatientDto>>>
+    @GET("v1/relationships")
+    suspend fun getRelationships(): Response<ApiResponse<List<RelationshipDto>>>
 
     @GET("v1/patients/{id}")
-    suspend fun getPatientProfile(@Path("id") patientId: String): Response<ApiResponse<CaregiverPatientDto>>
+    suspend fun getPatientProfile(@Path("id") patientId: String): Response<PatientProfileDto>
 }

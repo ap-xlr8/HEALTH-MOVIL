@@ -32,11 +32,15 @@ open class SecureTokenStore {
         accessToken: String,
         refreshToken: String,
         role: String,
+        userId: String? = null,
     ) {
         prefs?.edit()
             ?.putString("access_token", accessToken)
             ?.putString("refresh_token", refreshToken)
             ?.putString("role", role)
+            ?.apply {
+                if (userId != null) putString("user_id", userId)
+            }
             ?.apply()
     }
 
@@ -45,6 +49,8 @@ open class SecureTokenStore {
     open fun refreshToken(): String? = prefs?.getString("refresh_token", null)
 
     open fun role(): String? = prefs?.getString("role", null)
+
+    open fun userId(): String? = prefs?.getString("user_id", null)
 
     open fun clear() {
         prefs?.edit()?.clear()?.apply()

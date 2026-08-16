@@ -34,6 +34,13 @@ interface AuthRepository {
         code: String,
     ): Boolean
 
+    suspend fun verify2FA(
+        email: String,
+        code: String,
+    ): Session
+
+    suspend fun resend2FA(email: String): Boolean
+
     suspend fun forgotPassword(email: String): Boolean
 
     suspend fun saveHealthProfile(profile: HealthProfile)
