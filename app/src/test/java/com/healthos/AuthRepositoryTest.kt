@@ -14,7 +14,7 @@ import com.healthos.data.remote.RegisterResponseDataDto
 import com.healthos.data.remote.TwoFactorResendRequestDto
 import com.healthos.data.remote.TwoFactorVerifyRequestDto
 import com.healthos.data.remote.VerifyEmailResponseDataDto
-import com.healthos.data.remote.VerifyEmailTokenDto
+import com.healthos.data.remote.VerifyEmailRequestDto
 import com.healthos.data.repository.AuthRepositoryImpl
 import com.healthos.domain.model.Role
 import com.healthos.security.SecureTokenStore
@@ -105,7 +105,8 @@ class FakeAuthApiService : AuthApiService {
             ),
         )
 
-    override suspend fun verifyEmail(request: VerifyEmailTokenDto): Response<ApiResponse<VerifyEmailResponseDataDto>> =
+    // FIX-01: Signature updated to match VerifyEmailRequestDto contract {email, code}
+    override suspend fun verifyEmail(request: VerifyEmailRequestDto): Response<ApiResponse<VerifyEmailResponseDataDto>> =
         Response.success(ApiResponse(status = "success", data = VerifyEmailResponseDataDto(userId = "USR-001", message = "Verified")))
 
     override suspend fun verify2FA(request: TwoFactorVerifyRequestDto): Response<LoginResponseDto> =

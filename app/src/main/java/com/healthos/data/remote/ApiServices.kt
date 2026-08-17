@@ -79,8 +79,10 @@ data class RefreshTokenRequestDto(
     @Json(name = "refresh_token") val refreshToken: String,
 )
 
-data class VerifyEmailTokenDto(
-    @Json(name = "token") val token: String,
+// FIX-01: Aligned with backend contract — POST /v1/auth/verify-email expects {email, code}
+data class VerifyEmailRequestDto(
+    @Json(name = "email") val email: String,
+    @Json(name = "code") val code: String,
 )
 
 data class TwoFactorVerifyRequestDto(
@@ -347,9 +349,10 @@ interface AuthApiService {
         @Body request: RefreshTokenRequestDto,
     ): Response<LoginResponseDto>
 
+    // FIX-01: Body type changed from VerifyEmailTokenDto to VerifyEmailRequestDto
     @POST("v1/auth/verify-email")
     suspend fun verifyEmail(
-        @Body request: VerifyEmailTokenDto,
+        @Body request: VerifyEmailRequestDto,
     ): Response<ApiResponse<VerifyEmailResponseDataDto>>
 
     @POST("v1/auth/2fa/verify")
@@ -440,6 +443,12 @@ interface PatientApiService {
     suspend fun registerDevice(
         @Body request: DeviceDto,
     ): Response<ApiResponse<DeviceDto>>
+
+    // FIX-02: DELETE endpoint to notify backend on device unlink
+    @retrofit2.http.DELETE("v1/devices/{id}")
+    suspend fun deleteDevice(
+        @Path("id") deviceId: String,
+    ): Response<Map<String, Any>>
 
     @GET("v1/devices/{id}/sync-config")
     suspend fun getDeviceSyncConfig(

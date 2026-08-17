@@ -28,7 +28,7 @@ import com.healthos.data.remote.SyncMeasurementItemDto
 import com.healthos.data.remote.SyncMeasurementsRequestDto
 import com.healthos.data.remote.TwoFactorResendRequestDto
 import com.healthos.data.remote.TwoFactorVerifyRequestDto
-import com.healthos.data.remote.VerifyEmailTokenDto
+import com.healthos.data.remote.VerifyEmailRequestDto
 import com.healthos.domain.model.Alert
 import com.healthos.domain.model.AlertStatus
 import com.healthos.domain.model.Allergy
@@ -182,9 +182,15 @@ class AuthRepositoryImpl
             email: String,
             code: String,
         ): Boolean {
-            if (code.isBlank()) return false
+            // FIX-01: Aligned payload — backend requires {email, code}, not {token}
+            if (code.isBlank() || !email.contains("@")) return false
             return try {
-                val response = authApi.verifyEmail(VerifyEmailTokenDto(token = code))
+                val response = authApi.verifyEmail(
+                    VerifyEmailRequestDto(
+                        email = email.trim().lowercase(),
+                        code = code.trim(),
+                    ),
+                )
                 response.isSuccessful
             } catch (_: Exception) {
                 false
@@ -406,6 +412,12 @@ class PatientRepositoryImpl
 
         override suspend fun unlinkDevice(id: String) {
             dao.deleteDevice(id)
+            // FIX-02: Notify backend of device unlink — DELETE /v1/devices/{id}
+            try {
+                patientApi.deleteDevice(id)
+            } catch (_: Exception) {
+                // Offline-safe: device removed locally; backend will reconcile on next sync
+            }
         }
 
         override suspend fun updateDeviceTelemetry(id: String, batteryPercent: Int, rssi: Int) {

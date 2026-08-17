@@ -53,12 +53,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.fragment.app.FragmentActivity
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.healthos.domain.model.HealthProfile
 import com.healthos.domain.model.NotificationPreferences
 import com.healthos.domain.model.WearableDevice
+import com.healthos.presentation.auth.AuthViewModel
 import com.healthos.presentation.patient.PatientViewModel
 import com.healthos.presentation.theme.AmberWarning
 import com.healthos.presentation.theme.BlueElectric
@@ -82,6 +86,8 @@ import com.healthos.presentation.theme.TextTertiary
 @Composable
 fun SettingsScreen(
     viewModel: PatientViewModel,
+    // FIX-03: AuthViewModel needed to read/write biometric enabled state
+    authViewModel: AuthViewModel = hiltViewModel(),
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -90,9 +96,12 @@ fun SettingsScreen(
     val userProfile by viewModel.userProfile.collectAsState()
     val healthProfile by viewModel.healthProfile.collectAsState()
 
+    // FIX-03: Read biometric state from AuthViewModel (persisted in EncryptedSharedPreferences)
+    val isBiometricEnabled by authViewModel.isBiometricEnabled.collectAsState()
+    val activity = LocalContext.current as? FragmentActivity
+
     var themeMode by remember { mutableStateOf("SYSTEM") }
     var accentColorName by remember { mutableStateOf("TEAL") }
-    var biometricEnabled by remember { mutableStateOf(true) }
 
     // Patient profile edit state
     var firstName by remember(userProfile) { mutableStateOf(userProfile?.firstName ?: "Paciente") }
@@ -205,9 +214,14 @@ fun SettingsScreen(
                             Text("Autenticación Biométrica (Huella / Facial)", color = TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                             Text("Protege tu historial médico con KeyStore AES-256 GCM", color = TextSecondary, fontSize = 12.sp)
                         }
+                        // FIX-03: Switch connected to AuthViewModel — state persists across sessions
                         Switch(
-                            checked = biometricEnabled,
-                            onCheckedChange = { biometricEnabled = it },
+                            checked = isBiometricEnabled,
+                            onCheckedChange = { enabled ->
+                                if (activity != null) {
+                                    authViewModel.setBiometricEnabled(enabled, activity)
+                                }
+                            },
                             colors = SwitchDefaults.colors(checkedThumbColor = TealPrimary, checkedTrackColor = TealDark),
                         )
                     }
